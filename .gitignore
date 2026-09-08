@@ -7,3 +7,7 @@ dist/
 venv/
 .pytest_cache/
 .DS_Store
+
+# lgpio creates its notification FIFOs in the working directory, which for
+# the systemd unit is this checkout.
+.lgd-nfy*

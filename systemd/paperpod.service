@@ -16,6 +16,10 @@ SupplementaryGroups=gpio
 # whether or not paperpod has been pip-installed. Change it if you cloned
 # somewhere else.
 WorkingDirectory=/home/murray/paperpod
+# Without this gpiozero walks its factory list and silently settles on the
+# sysfs backend, which modern kernels have dropped — the failure then surfaces
+# as an EINVAL several layers down rather than as "lgpio did not start".
+Environment=GPIOZERO_PIN_FACTORY=lgpio
 ExecStart=/usr/bin/python3 -m paperpod.app --url http://localhost:6680
 Restart=on-failure
 RestartSec=5
