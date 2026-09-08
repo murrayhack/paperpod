@@ -89,6 +89,25 @@ All five are in the README now, which is the point of having found them.
 
 ## Backlog
 
+- **Press the other four buttons.** Only GPIO 13 has been exercised —
+  tap for play/pause, hold for next. Still untried: volume on 5 and 6,
+  `back` and `previous_track` on 16, the menu button on 26 and its
+  hold-to-lock, and the mode switch itself (open the menu, confirm 5 and
+  6 move the cursor rather than change volume, wait out `menu_timeout`,
+  confirm they go back to volume). Worth doing on jumpers, since a
+  mapping bug is far easier to fix before anything is soldered.
+- **A setup script for a clean image.** Everything currently lives in
+  two READMEs and has to be retyped, which is fine once and miserable
+  twice — and the failures it guards against are all silent. It would
+  need to: enable SPI and I2C; add the `hifiberry-dac` overlay and
+  comment out `dtparam=audio=on`; apt-install the Python packages; clone
+  both repositories; install mopidy-epaper into the system Python with
+  `--break-system-packages --no-deps`; write `mopidy.conf` with
+  `pwr_pin =` and the `alsasink` output; drop in the `mopidy.service`
+  override and paperpod's unit; and `enable` — not merely `start` —
+  both. Verifying afterwards matters as much as installing: check
+  `epaper` is among the enabled extensions, that `pinctrl get 18` reads
+  `a0`, and that `aplay -l` shows the DAC.
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
