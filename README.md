@@ -65,6 +65,49 @@ two devices are competing for one header.
 | RTC | SDA / SCL | 2, 3 | 3, 5 |
 | Buttons | up, down, select, back, menu | 5, 6, 13, 16, 26 | 29, 31, 33, 36, 37 |
 
+### The header, as it sits
+
+The same thing laid out physically, which is the view you want when
+soldering — free pins and collisions are visible at a glance rather than
+cross-referenced. Pin 1 is the corner nearest the SD card.
+
+```
+                                 ┌───────┐
+             panel  3.3V  ─────  │  1  2 │  ─────  5V     panel  *
+             RTC    SDA   ─────  │  3  4 │  ─────  5V     DAC VIN
+             RTC    SCL   ─────  │  5  6 │  ─────  GND    panel
+                    free  ─────  │  7  8 │  ─────  free
+             panel  GND   ─────  │  9 10 │  ─────  free
+             panel  RST   ─────  │ 11 12 │  ─────  BCK    DAC     *
+                    free  ─────  │ 13 14 │  ─────  GND    DAC
+                    free  ─────  │ 15 16 │  ─────  free
+                    free  ─────  │ 17 18 │  ─────  BUSY   panel
+             panel  MOSI  ─────  │ 19 20 │  ─────  free
+              SPI   MISO  ─────  │ 21 22 │  ─────  DC     panel
+             panel  SCLK  ─────  │ 23 24 │  ─────  CS     panel
+                    free  ─────  │ 25 26 │  ─────  CE1    SPI
+                  EEPROM  ─────  │ 27 28 │  ─────  EEPROM
+            button  up    ─────  │ 29 30 │  ─────  GND    buttons
+            button  down  ─────  │ 31 32 │  ─────  free
+            button  select─────  │ 33 34 │  ─────  free
+             DAC    WS    ─────  │ 35 36 │  ─────  back   button
+            button  menu  ─────  │ 37 38 │  ─────  PCM_DIN  (I2S)
+             DAC    GND   ─────  │ 39 40 │  ─────  DIN    DAC
+                                 └───────┘
+```
+
+`*` marks the two that fail silently if you forget them: pin 2, which feeds
+the panel's charge pump, and pin 12, which is I2S BCLK and must not be given
+to the panel's PWR.
+
+**Free to use:** 7, 8, 10, 13, 15, 16, 20, 25, 32, 34 — plus 17 (3.3V) if the
+RTC is a separate module and needs power. Leave 21 and 26 alone (SPI MISO and
+CE1), 27 and 28 alone (HAT EEPROM), and 38 alone (I2S claims it with the
+overlay loaded, even though nothing is wired to it).
+
+The five buttons share the single ground at pin 30, so they need six wires
+between them rather than ten.
+
 Two things here cost real time to discover, so they are worth stating plainly:
 
 **The panel needs 5V as well as 3.3V.** 3.3V runs the controller, but the
