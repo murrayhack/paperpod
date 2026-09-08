@@ -12,6 +12,10 @@ User=murray
 # gpiozero needs group access to /dev/gpiochip*; on Raspberry Pi OS the gpio
 # group already has it.
 SupplementaryGroups=gpio
+# Running from the checkout puts the package on sys.path, so this works
+# whether or not paperpod has been pip-installed. Change it if you cloned
+# somewhere else.
+WorkingDirectory=/home/murray/paperpod
 ExecStart=/usr/bin/python3 -m paperpod.app --url http://localhost:6680
 Restart=on-failure
 RestartSec=5
