@@ -28,6 +28,10 @@ paperpod = "paperpod.app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pytest puts the test directory on sys.path, not the root, so without this the
+# tests only find the package once it is installed. They should run in a fresh
+# checkout — that is the point of keeping gpiozero out of everything but app.py.
+pythonpath = ["."]
 
 [tool.setuptools]
 packages = ["paperpod"]
