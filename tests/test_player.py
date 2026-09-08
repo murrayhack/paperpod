@@ -19,20 +19,31 @@ class FakeResponse(io.BytesIO):
         self.close()
 
 
+class Calls(list):
+    """The requests made, in order, as ``(url, body)``.
+
+    A list so tests can index it, subclassed so it can also carry the replies
+    they queue — a bare list has no ``__dict__`` to hang that on.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.replies = []
+
+
 @pytest.fixture
 def calls(monkeypatch):
     """Capture requests and reply with whatever the test queued."""
-    recorded = []
-    replies = []
+    recorded = Calls()
 
     def fake_urlopen(request, timeout=None):
         url = request if isinstance(request, str) else request.full_url
         body = None if isinstance(request, str) else request.data
         recorded.append((url, json.loads(body) if body else None))
-        return FakeResponse(json.dumps(replies.pop(0) if replies else {}).encode())
+        reply = recorded.replies.pop(0) if recorded.replies else {}
+        return FakeResponse(json.dumps(reply).encode())
 
     monkeypatch.setattr(player_module.urllib.request, "urlopen", fake_urlopen)
-    recorded.replies = replies
     return recorded
 
 
