@@ -160,27 +160,99 @@ I2C-controlled volume this one lacks.
 
 ### Installing
 
-Mopidy runs in the system Python on Raspberry Pi OS, but paperpod does not have
-to — it only speaks HTTP. Still, it needs `gpiozero`, which apt already
-provides:
+Clone it beside mopidy-epaper — `/home/murray/paperpod` is what the service
+unit expects — and let apt supply `gpiozero`:
 
 ```sh
 sudo apt install -y python3-gpiozero python3-pytest
-sudo pip install --break-system-packages --no-deps -e .
+pytest tests/
 ```
 
-Then:
+No install step is needed. The service runs from the checkout, and the tests
+put the root on the path themselves, so a `git pull` is the whole update
+procedure. `sudo pip install --break-system-packages --no-deps -e .` is
+optional and only buys you a `paperpod` command on the path.
+
+While working out the button layout, run it in the foreground — the service
+logs nothing on a press, because dispatch is a debug-level line:
+
+```sh
+python3 -m paperpod.app --verbose
+```
+
+## Running on boot
+
+Two services, and Mopidy's needs adjusting before either will work.
+
+### Mopidy
+
+The apt package ships its own `mopidy.service`, which runs as the **`mopidy`
+user** with config at **`/etc/mopidy/mopidy.conf`**. Neither is what you get
+running `mopidy` by hand, so enabling it unchanged starts a Mopidy that cannot
+read your config, cannot read your home directory, and has never scanned your
+library.
+
+Rather than migrate all that, override the unit to run as you. A drop-in, so
+package upgrades leave it alone and the unit keeps its name — which matters,
+because paperpod orders itself after `mopidy.service`:
+
+```sh
+sudo mkdir -p /etc/systemd/system/mopidy.service.d
+sudo tee /etc/systemd/system/mopidy.service.d/override.conf >/dev/null <<'EOF'
+[Service]
+User=murray
+SupplementaryGroups=audio gpio spi
+WorkingDirectory=/home/murray
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+ExecStart=
+ExecStart=/usr/bin/mopidy --config /home/murray/.config/mopidy/mopidy.conf
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now mopidy
+```
+
+Four of those lines are load-bearing in ways that are not obvious:
+
+- **The empty `ExecStart=`** clears the packaged command before setting yours.
+  Without it systemd rejects the unit outright.
+- **`WorkingDirectory=/home/murray`** because lgpio creates a notification
+  FIFO in the working directory, and systemd's default is `/`, which the
+  service user cannot write. lgpio then fails, gpiozero falls through its
+  factory list to the sysfs backend that modern kernels have dropped, and the
+  panel dies with an `EINVAL` from deep inside gpiozero. Running by hand hides
+  this, because your shell's working directory is writable.
+- **`GPIOZERO_PIN_FACTORY=lgpio`** so that fallback cannot happen quietly
+  again. If lgpio will not start you get an error naming it, instead of a
+  confusing traceback about `/sys/class/gpio`.
+- **Dropping `/usr/share/mopidy/conf.d`** from the config path is deliberate.
+  Running `mopidy` by hand never loaded it either, so this keeps the service
+  identical to what you tested interactively.
+
+Check it took — `systemctl cat mopidy` should show the override at the bottom,
+and the log should read `Loading config from file:///home/murray/.config/...`
+with `epaper` among the enabled extensions.
+
+### paperpod
 
 ```sh
 sudo cp systemd/paperpod.service /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl enable --now paperpod
 journalctl -u paperpod -f
 ```
 
-Or run it in the foreground while you are working out the button layout:
+**`enable`, not just `start`.** `start` runs it now and it is gone after a
+reboot; `enable` is what writes the boot symlink. `systemctl is-enabled
+paperpod` is the one-word check, and worth running before concluding the
+buttons are broken — a missing daemon and a bad ground look identical from the
+outside, while the panel keeps drawing either way because that is Mopidy's job.
+
+Then reboot and confirm both come back:
 
 ```sh
-python3 -m paperpod.app --verbose
+sudo reboot
+systemctl is-enabled mopidy paperpod
+systemctl status mopidy paperpod --no-pager
 ```
 
 ## Buttons
