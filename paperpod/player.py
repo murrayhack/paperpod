@@ -28,9 +28,19 @@ class Player:
     attached — see ``tests/``.
     """
 
-    def __init__(self, base_url="http://localhost:6680", timeout=2, volume_step=5):
+    # /epaper/status waits on the panel's frontend actor, which a full refresh
+    # holds for a couple of seconds; mopidy-epaper gives up on it after 3. Wait
+    # longer than that, or we time out first and report a panel that answered
+    # perfectly well as unreachable.
+    STATUS_TIMEOUT = 4
+
+    def __init__(
+        self, base_url="http://localhost:6680", timeout=2, volume_step=5,
+        status_timeout=STATUS_TIMEOUT,
+    ):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._status_timeout = status_timeout
         self._volume_step = volume_step
 
     # -- the panel -------------------------------------------------------
@@ -51,7 +61,7 @@ class Player:
         """
         try:
             with urllib.request.urlopen(
-                f"{self._base_url}/epaper/status", timeout=self._timeout
+                f"{self._base_url}/epaper/status", timeout=self._status_timeout
             ) as response:
                 return json.load(response)
         except (OSError, ValueError) as exc:

@@ -130,6 +130,25 @@ def test_play_pause_starts_from_stopped(calls):
     assert calls[1][1]["method"] == "core.playback.play"
 
 
+def test_status_waits_longer_than_the_panel_does(monkeypatch):
+    """The panel gives up on its own actor after 3s; we must not go first.
+
+    Otherwise a poll landing during a full refresh reports a panel that
+    answered perfectly well as unreachable, and the mode cache goes stale.
+    """
+    timeouts = []
+
+    def fake_urlopen(request, timeout=None):
+        timeouts.append(timeout)
+        return FakeResponse(b"{}")
+
+    monkeypatch.setattr(player_module.urllib.request, "urlopen", fake_urlopen)
+
+    Player().panel_status()
+
+    assert timeouts[0] > 3
+
+
 def test_an_unreachable_mopidy_returns_none(monkeypatch):
     def boom(request, timeout=None):
         raise OSError("connection refused")
