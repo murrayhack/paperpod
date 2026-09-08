@@ -84,6 +84,15 @@ Python targets 3.9+. No formatter or linter is configured; follow the
 surrounding code. Runtime dependencies are the standard library plus gpiozero;
 adding a third is a decision, not a detail.
 
+## Documentation to keep current
+
+- **`PROGRESS.md`** — the design log. Every change gets an entry explaining the
+  reasoning, dated, and marked **unverified** until it has run on the Pi. When
+  the user confirms something on hardware, record that against the entry.
+  Rejected options and known limitations live here too.
+- **`README.md`** — the build guide: wiring, config, installation, the button
+  map. Anything someone assembling one of these needs.
+
 ## Git
 
 Branch per change, merged to `main` via PR. Commit subjects are imperative and
