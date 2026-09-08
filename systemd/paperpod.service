@@ -1,0 +1,20 @@
+[Unit]
+Description=paperpod button daemon
+# Mopidy serves both APIs this drives, so there is nothing to do until it is
+# up. Not a hard dependency: the daemon retries and logs rather than dying, so
+# a Mopidy restart does not take the buttons with it.
+After=network-online.target mopidy.service
+Wants=mopidy.service
+
+[Service]
+Type=simple
+User=murray
+# gpiozero needs group access to /dev/gpiochip*; on Raspberry Pi OS the gpio
+# group already has it.
+SupplementaryGroups=gpio
+ExecStart=/usr/bin/python3 -m paperpod.app --url http://localhost:6680
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools >= 66", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paperpod"
+version = "0.1.0"
+description = "Buttons, volume and transport for an e-paper Mopidy player"
+readme = "README.md"
+requires-python = ">= 3.9"
+license = { text = "MIT" }
+# Nothing at runtime beyond the standard library: both APIs this drives are
+# plain HTTP, so urllib is enough and there is no dependency to keep current.
+dependencies = []
+
+[project.optional-dependencies]
+# Only installable on a Raspberry Pi. Kept out of the base dependencies so the
+# bindings and the HTTP client can be developed and tested anywhere.
+hardware = [
+    "gpiozero >= 2.0",
+]
+test = [
+    "pytest >= 7.0",
+]
+
+[project.scripts]
+paperpod = "paperpod.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["paperpod"]
