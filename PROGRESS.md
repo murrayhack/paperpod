@@ -87,6 +87,47 @@ is worth recording as a pattern.
 
 All five are in the README now, which is the point of having found them.
 
+## Setup script (2026-09-09)
+
+`setup.sh` builds a player from a clean Raspberry Pi OS image: packages,
+`config.txt`, group membership, both clones, the editable extension
+install, `mopidy.conf`, both systemd units, and `enable`. `--verify`
+re-runs the checks alone and changes nothing, which makes it a
+diagnostic for a player that has stopped working as much as a
+post-install test.
+
+The checks are part of the script rather than a paragraph in the README
+because every step it automates fails silently when missed. Checking
+that a service is *enabled* and not merely running, that `epaper` is
+among Mopidy's extensions, that GPIO 18 reads `a0`, that the DAC is
+present and that `/epaper/status` answers covers every failure this
+build has actually produced.
+
+It derives the user and home from `SUDO_USER` rather than assuming
+`murray`, prefers the checkout it is running from over a hardcoded path,
+and generates paperpod's unit from the checked-in one by substituting
+both in. Two deliberate refusals: it will not overwrite an existing
+`mopidy.conf` (it checks for `pwr_pin =` and reports instead), and it
+will not pull over an existing checkout.
+
+**Verified on a clean image 2026-09-09.** All eight checks pass. The run
+found two bugs that no amount of reading would have:
+
+- A clean image has no `python3-pip`, so the extension install died. It
+  had only ever worked by hand on a card that had pip from earlier work.
+  Now installed, and invoked as `python3 -m pip`, since `sudo` resets
+  PATH to `secure_path` and a bare `pip` is not reliably on it.
+- The pending-reboot flag was per-run state, so re-running after an edit
+  but before the reboot saw a correct `config.txt`, concluded nothing
+  was pending, and started both services against a kernel with no
+  overlay loaded. It now compares what `config.txt` asks for against
+  what the running kernel has, which holds regardless of which run made
+  the change. `--verify` leads with it, because a pending reboot makes
+  every check below misreport.
+
+Both are the same shape as the five failures under bring-up: nothing
+raised, and the wrong state looked like the right one.
+
 ## Backlog
 
 - **Press the other four buttons.** Only GPIO 13 has been exercised —
@@ -96,24 +137,6 @@ All five are in the README now, which is the point of having found them.
   6 move the cursor rather than change volume, wait out `menu_timeout`,
   confirm they go back to volume). Worth doing on jumpers, since a
   mapping bug is far easier to fix before anything is soldered.
-- ~~**A setup script for a clean image.**~~ Written as `setup.sh`
-  (2026-09-09), **unverified** — never run against a clean image, which
-  is the only test that means anything. Covers packages, `config.txt`,
-  groups, both clones, the editable extension install, `mopidy.conf`,
-  both systemd units and `enable`. `--verify` re-runs the checks alone,
-  changing nothing, which also makes it a diagnostic for a player that
-  has stopped working.
-
-  It derives the user and home from `SUDO_USER` rather than assuming
-  `murray`, and generates paperpod's unit from the checked-in one by
-  substituting those in — so the hardcoded paths in
-  `systemd/paperpod.service` stay accurate for this build without
-  making the script only work here.
-
-  Two deliberate refusals: it will not overwrite an existing
-  `mopidy.conf` (it checks for `pwr_pin =` and reports instead), and it
-  will not pull over an existing checkout. A surprise merge is worse
-  than a stale copy.
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
