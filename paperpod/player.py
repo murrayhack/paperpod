@@ -42,6 +42,11 @@ class Player:
         self._timeout = timeout
         self._status_timeout = status_timeout
         self._volume_step = volume_step
+        # Mopidy serves the panel API, and systemd releases us when its process
+        # execs rather than when it is listening, so the first polls of a boot
+        # are expected to fail. Stay quiet until the panel has answered once;
+        # after that, a failure is real news and worth a warning.
+        self._panel_seen = False
 
     # -- the panel -------------------------------------------------------
 
@@ -63,10 +68,13 @@ class Player:
             with urllib.request.urlopen(
                 f"{self._base_url}/epaper/status", timeout=self._status_timeout
             ) as response:
-                return json.load(response)
+                status = json.load(response)
         except (OSError, ValueError) as exc:
-            logger.warning("Could not read panel status: %s", exc)
+            log = logger.warning if self._panel_seen else logger.debug
+            log("Could not read panel status: %s", exc)
             return None
+        self._panel_seen = True
+        return status
 
     # -- Mopidy ----------------------------------------------------------
 

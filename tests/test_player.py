@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 
 import pytest
 
@@ -147,6 +148,38 @@ def test_status_waits_longer_than_the_panel_does(monkeypatch):
     Player().panel_status()
 
     assert timeouts[0] > 3
+
+
+def test_the_panel_is_quiet_until_it_has_answered_once(monkeypatch, caplog):
+    """Boot-time poll failures are expected, so they must not be warnings.
+
+    systemd releases paperpod when Mopidy's process execs, not when it is
+    listening, so the first polls of every boot hit a closed socket. Warning
+    about that trains the reader to ignore the warning that matters.
+    """
+    listening = False
+
+    def fake_urlopen(request, timeout=None):
+        if not listening:
+            raise OSError("[Errno 111] Connection refused")
+        return FakeResponse(b"{}")
+
+    monkeypatch.setattr(player_module.urllib.request, "urlopen", fake_urlopen)
+    player = Player()
+
+    with caplog.at_level(logging.DEBUG, logger="paperpod.player"):
+        assert player.panel_status() is None
+    assert [r.levelname for r in caplog.records] == ["DEBUG"]
+
+    # Once the panel has answered, a later failure is real news.
+    listening = True
+    assert player.panel_status() == {}
+
+    listening = False
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="paperpod.player"):
+        assert player.panel_status() is None
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
 
 
 def test_an_unreachable_mopidy_returns_none(monkeypatch):
