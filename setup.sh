@@ -118,6 +118,24 @@ install_packages() {
     ok "packages installed"
 }
 
+# config.txt applies each line under the last conditional filter above it, so a
+# line appended to a file ending in [pi5], [cm4] or [none] applies to nothing on
+# this board. Worse, grep still finds it, so the next run reports it as already
+# set while it does nothing at all. Reset to unconditional before appending.
+#
+# Idempotent: after the first append the trailing filter is [all], so later
+# calls add nothing. Only called when something is actually being appended, to
+# avoid writing [all] into a file that needed no changes.
+append_config() {
+    local last
+    last=$(grep -oE '^\[[^]]+\]' "$CONFIG_TXT" | tail -1 || true)
+    if [ -n "$last" ] && [ "$last" != "[all]" ]; then
+        printf '\n[all]\n' >> "$CONFIG_TXT"
+        info "added [all] — config.txt ended inside a $last section"
+    fi
+    printf '%s\n' "$1" >> "$CONFIG_TXT"
+}
+
 configure_boot() {
     step "Configuring $CONFIG_TXT"
     [ -n "$CONFIG_TXT" ] || die "no config.txt found; is this a Raspberry Pi?"
@@ -133,7 +151,7 @@ configure_boot() {
             info "uncommented $param"
             changed=1
         else
-            printf '\n%s\n' "$param" >> "$CONFIG_TXT"
+            append_config "$param"
             info "added $param"
             changed=1
         fi
@@ -157,7 +175,7 @@ configure_boot() {
     if grep -qE '^dtoverlay=hifiberry-dac' "$CONFIG_TXT"; then
         ok "hifiberry-dac overlay already present"
     else
-        printf 'dtoverlay=hifiberry-dac\n' >> "$CONFIG_TXT"
+        append_config 'dtoverlay=hifiberry-dac'
         info "added dtoverlay=hifiberry-dac"
         changed=1
     fi
@@ -168,7 +186,7 @@ configure_boot() {
         if grep -qE '^dtoverlay=i2c-rtc,ds3231' "$CONFIG_TXT"; then
             ok "ds3231 overlay already present"
         else
-            printf 'dtoverlay=i2c-rtc,ds3231\n' >> "$CONFIG_TXT"
+            append_config 'dtoverlay=i2c-rtc,ds3231'
             info "added dtoverlay=i2c-rtc,ds3231"
             changed=1
         fi
