@@ -466,7 +466,14 @@ verify() {
     # which needs root -- and --verify is meant to run without sudo.
     if [ -n "$CONFIG_TXT" ] && grep -qE '^dtoverlay=i2c-rtc,ds3231' "$CONFIG_TXT" 2>/dev/null; then
         if [ -r /sys/class/rtc/rtc0/time ]; then
-            ok "RTC readable ($(cat /sys/class/rtc/rtc0/date) $(cat /sys/class/rtc/rtc0/time) UTC)"
+            local rtc_utc rtc_local
+            rtc_utc="$(cat /sys/class/rtc/rtc0/date) $(cat /sys/class/rtc/rtc0/time)"
+            # sysfs always reports UTC, which reads as wrong by an hour or two
+            # against a wall clock, so show the same instant in local time
+            # too. Both dates are given because near midnight they differ.
+            # Empty if date cannot parse it, and the line then shows UTC alone.
+            rtc_local=$(date -d "$rtc_utc UTC" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || true)
+            ok "RTC readable ($rtc_utc UTC${rtc_local:+ = $rtc_local})"
         else
             bad "the ds3231 overlay is configured but /sys/class/rtc/rtc0 is not readable"
         fi
