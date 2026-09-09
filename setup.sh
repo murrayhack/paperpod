@@ -26,7 +26,6 @@ set -euo pipefail
 EPAPER_REPO=https://github.com/murrayhack/mopidy-epaper.git
 PAPERPOD_REPO=https://github.com/murrayhack/paperpod.git
 
-REBOOT_REQUIRED=0
 PROBLEMS=0
 
 # ---------------------------------------------------------------- output ---
@@ -80,6 +79,23 @@ else
 fi
 
 as_user() { sudo -u "$TARGET_USER" -H "$@"; }
+
+# Is the running kernel missing something config.txt asks for?
+#
+# Asked this way round rather than by tracking whether this run edited the
+# file: re-running the script after an edit but before the reboot would
+# otherwise see a correct config.txt and conclude nothing was pending.
+reboot_pending() {
+    [ -n "$CONFIG_TXT" ] || return 1
+    if grep -qE '^dtoverlay=hifiberry-dac' "$CONFIG_TXT" \
+        && ! aplay -l 2>/dev/null | grep -q sndrpihifiberry; then
+        return 0
+    fi
+    if grep -qE '^dtparam=spi=on' "$CONFIG_TXT" && [ ! -e /dev/spidev0.0 ]; then
+        return 0
+    fi
+    return 1
+}
 
 # ------------------------------------------------------------------ steps ---
 
@@ -141,7 +157,6 @@ configure_boot() {
     fi
 
     if [ "$changed" = 1 ]; then
-        REBOOT_REQUIRED=1
         warn "boot config changed — a reboot is needed before this takes effect"
     fi
 }
@@ -189,7 +204,10 @@ install_extension() {
     #
     # Invoked as `python3 -m pip` rather than `pip`: sudo resets PATH to
     # secure_path, and a bare `pip` is not reliably on it.
-    python3 -m pip install --break-system-packages --no-deps -e "$EPAPER_DIR" --quiet
+    # Installing into the system Python as root is the point here, not an
+    # accident, so pip's warning about it is noise.
+    python3 -m pip install --break-system-packages --no-deps \
+        --root-user-action=ignore --quiet -e "$EPAPER_DIR"
     ok "installed editable from $EPAPER_DIR"
     # paperpod needs no install: its unit runs from the checkout.
 }
@@ -265,8 +283,8 @@ enable_services() {
     systemctl enable --quiet mopidy paperpod
     ok "both enabled at boot"
 
-    if [ "$REBOOT_REQUIRED" = 1 ]; then
-        warn "not starting them — the boot config changed, so reboot first"
+    if reboot_pending; then
+        warn "not starting them — the kernel does not have the overlay yet"
     else
         systemctl restart mopidy paperpod
         ok "both started"
@@ -277,6 +295,11 @@ enable_services() {
 
 verify() {
     step "Checking the install"
+
+    if reboot_pending; then
+        bad "reboot pending — config.txt asks for more than the running kernel has"
+        info "everything below will misreport until you reboot"
+    fi
 
     for unit in mopidy paperpod; do
         if [ "$(systemctl is-enabled "$unit" 2>/dev/null || true)" = enabled ]; then
@@ -350,7 +373,7 @@ step "Done"
 info "Put some music in $TARGET_HOME/music and run: mopidy local scan"
 info "Wire the buttons to GPIO 5, 6, 13, 16 and 26, each to a shared ground."
 info "The panel needs 5V as well as 3.3V — see the header diagram in README.md."
-if [ "$REBOOT_REQUIRED" = 1 ]; then
+if reboot_pending; then
     printf '\n    %sReboot, then run: ./setup.sh --verify%s\n' "$BOLD" "$RESET"
 else
     printf '\n    %sNow run: ./setup.sh --verify%s\n' "$BOLD" "$RESET"
