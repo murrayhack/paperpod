@@ -209,6 +209,16 @@ install_extension() {
     python3 -m pip install --break-system-packages --no-deps \
         --root-user-action=ignore --quiet -e "$EPAPER_DIR"
     ok "installed editable from $EPAPER_DIR"
+
+    # Mopidy-Local 3.2.1 imports imghdr, which PEP 594 removed from the stdlib
+    # in Python 3.13. Without it the extension raises on load, Mopidy drops it,
+    # and `mopidy local scan` fails with the un-obvious "unrecognized command:
+    # local". Harmless to install where imghdr still exists.
+    if ! python3 -c 'import imghdr' 2>/dev/null; then
+        python3 -m pip install --break-system-packages \
+            --root-user-action=ignore --quiet standard-imghdr
+        ok "installed the imghdr backport for mopidy-local"
+    fi
     # paperpod needs no install: its unit runs from the checkout.
 }
 
@@ -283,7 +293,16 @@ seed_music() {
         return
     fi
 
-    as_user mopidy --config "$MOPIDY_CONF" local scan 2>&1 | tail -1 | sed 's/^/    /'
+    # Not piped through `tail -1`: a failing scan reports the reason over many
+    # lines and the last one is the least useful of them. Show the summary on
+    # success, the whole thing on failure.
+    local scan_log
+    scan_log=$(as_user mopidy --config "$MOPIDY_CONF" local scan 2>&1) || {
+        bad "library scan failed"
+        printf '%s\n' "$scan_log" | sed 's/^/    /'
+        return
+    }
+    printf '%s\n' "$scan_log" | tail -1 | sed 's/^/    /'
 }
 
 write_units() {
@@ -359,10 +378,25 @@ verify() {
         fi
     done
 
-    if journalctl -u mopidy -b --no-pager 2>/dev/null | grep -q 'Enabled extensions:.*epaper'; then
+    # Take the *last* extensions line rather than any of them: an earlier,
+    # healthier start in the same boot would otherwise pass the check while the
+    # running process is broken. And wait for it -- systemctl returns as soon as
+    # the process execs, but Mopidy needs a while on a Pi Zero to get as far as
+    # logging its extensions, so an immediate check races the startup it means
+    # to be checking.
+    local epaper_seen=0
+    for _ in $(seq 30); do
+        if journalctl -u mopidy -b --no-pager 2>/dev/null \
+            | grep 'Enabled extensions:' | tail -1 | grep -q 'epaper'; then
+            epaper_seen=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$epaper_seen" -eq 1 ]; then
         ok "Mopidy loaded the epaper extension"
     else
-        bad "epaper not among Mopidy's enabled extensions"
+        bad "epaper not among Mopidy's enabled extensions (journalctl -u mopidy -b)"
     fi
 
     if command -v pinctrl >/dev/null; then
