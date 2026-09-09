@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The ends of the supported range: the Pi runs 3.13, and
+        # requires-python still claims 3.9.
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # A pip old enough can install the extra silently and not at all, which
+      # then reads as a missing-pytest failure rather than a packaging one.
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # No hardware extra: gpiozero is Pi-only, and keeping it out is what
+      # makes the bindings and the HTTP client testable here at all.
+      - name: Install
+        run: python -m pip install -e '.[test]'
+
+      - name: Test
+        run: python -m pytest -q

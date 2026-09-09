@@ -1,5 +1,7 @@
 # paperpod
 
+[![tests](https://github.com/murrayhack/paperpod/actions/workflows/tests.yml/badge.svg)](https://github.com/murrayhack/paperpod/actions/workflows/tests.yml)
+
 The physical half of an e-paper Mopidy player: a Raspberry Pi Zero with a
 Waveshare 2.13" panel, a PCM5100A I2S DAC and five buttons, in a case, behaving
 like an MP3 player rather than a computer that plays music.
