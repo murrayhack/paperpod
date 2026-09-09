@@ -163,9 +163,11 @@ raised, and the wrong state looked like the right one.
   for an early poll rather than guessing, so there is a beat where a
   press could mean the wrong thing. Shortening the poll interval narrows
   the window at the cost of more requests.
-- **The service logs nothing on a press.** Dispatch is a debug line and
-  the unit does not pass `--verbose`, so a working button and a dead one
-  look identical in the journal. Run it in the foreground to debug.
+- **A press logs one line, and only one.** Dispatch logs at info with the
+  GPIO and the resolved command, so `journalctl -u paperpod -f` shows
+  which button fired and what it meant. It does not show what Mopidy or
+  the panel then did with it, so a press that logs but changes nothing
+  still needs the other end checked.
 - **No display of its own.** Everything paperpod does shows up on the
   panel or not at all, so a button that fires against a stopped Mopidy
   is invisible apart from a warning in the log.

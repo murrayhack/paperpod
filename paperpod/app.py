@@ -57,19 +57,32 @@ class Buttons:
                 # The hold already fired. Swallow the release.
                 self._held.discard(pin)
                 return
-            self.dispatch(binding.press(self._mode.in_menu))
+            self.dispatch(binding.press(self._mode.in_menu), pin=pin)
 
         return handler
 
     def _on_hold(self, pin, binding):
         def handler():
             self._held.add(pin)
-            self.dispatch(binding.hold)
+            self.dispatch(binding.hold, pin=pin, held=True)
 
         return handler
 
-    def dispatch(self, command):
-        logger.debug("dispatch %s", command)
+    def dispatch(self, command, pin=None, held=False):
+        # At info, not debug: the unit does not pass --verbose, so a debug line
+        # meant a working button and a dead one looked identical in the
+        # journal. One line per press is not chatty -- gpiozero fires once per
+        # release, and a hold suppresses its own release.
+        #
+        # The pin is included because "which button is dead" is the question
+        # this log exists to answer, and the mapping line at startup gives the
+        # GPIO but a press on its own would not.
+        logger.info(
+            "GPIO %s %s -> %s",
+            pin if pin is not None else "?",
+            "held" if held else "pressed",
+            command,
+        )
         bindings.run(command, self._player)
         self._mode.note(command)
 
