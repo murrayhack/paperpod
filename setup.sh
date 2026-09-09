@@ -9,7 +9,13 @@
 # kernel dropped, and `systemctl start` without `enable` works perfectly until
 # the first reboot. So the script does the install and then checks its work.
 #
+# From a clean image:
+#
+#   sudo apt update && sudo apt install -y git
+#   git clone https://github.com/murrayhack/paperpod.git ~/paperpod
+#   cd ~/paperpod
 #   sudo ./setup.sh            install and configure
+#   sudo reboot
 #   ./setup.sh --verify        check an existing install, change nothing
 #
 # Safe to re-run. It will not overwrite an existing mopidy.conf or pull over a
@@ -49,8 +55,19 @@ if [ ! -d "$TARGET_HOME" ]; then
 fi
 
 EPAPER_DIR="$TARGET_HOME/mopidy-epaper"
-PAPERPOD_DIR="$TARGET_HOME/paperpod"
 MOPIDY_CONF="$TARGET_HOME/.config/mopidy/mopidy.conf"
+
+# Prefer the checkout this script is running from, so a clone somewhere other
+# than the default does not end up with a second copy in the home directory
+# and a service unit pointing at the wrong one. Falls back to the default,
+# which is what happens when only setup.sh has been downloaded — the clone
+# step below then fetches the rest.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [ -f "$SCRIPT_DIR/paperpod/app.py" ]; then
+    PAPERPOD_DIR="$SCRIPT_DIR"
+else
+    PAPERPOD_DIR="$TARGET_HOME/paperpod"
+fi
 
 # Bookworm and later moved the boot partition. Support both rather than
 # guessing wrong and silently editing a file nothing reads.

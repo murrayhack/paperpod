@@ -186,13 +186,23 @@ python3 -m paperpod.app --verbose
 
 From a clean Raspberry Pi OS image, `setup.sh` does everything below —
 packages, `config.txt`, both clones, the extension install, `mopidy.conf`, both
-systemd units — and then checks its own work:
+systemd units — and then checks its own work. Starting from nothing but a
+freshly flashed card with SSH enabled:
 
 ```sh
+sudo apt update && sudo apt install -y git
+git clone https://github.com/murrayhack/paperpod.git ~/paperpod
+cd ~/paperpod
+
 sudo ./setup.sh
 sudo reboot
 ./setup.sh --verify
 ```
+
+`git` is the only prerequisite, and only to fetch the script — everything after
+that it installs itself. It clones mopidy-epaper for you, and uses whichever
+paperpod checkout you ran it from, so cloning somewhere other than `~/paperpod`
+works fine.
 
 It is safe to re-run, and it will not overwrite an existing `mopidy.conf` or
 pull over a checkout you may have edited — it reports what is missing instead.
