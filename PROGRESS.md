@@ -141,6 +141,16 @@ raised, and the wrong state looked like the right one.
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
   rather than ten.
+- **A backup cell for the RTC.** The DS3231 on the HAT+ is enabled and
+  keeping correct time, but nothing is fitted to the board's 2-pin JST
+  connector, so it resets on every power cut — which is the one case it
+  exists for. Waveshare specify a rechargeable lithium cell at 3/3.3V;
+  their wiki for this board is still a placeholder, so check the
+  silkscreen for polarity before connecting anything. Until then the
+  overlay does real work while the Pi is powered and nothing at all
+  across a power-off, and NTP hides the difference whenever there is
+  network. The test that proves it: cut power, boot with wifi
+  unavailable, check `date`.
 - **A case.**
 - **Seek.** `seek_forward` / `seek_back` by 30s would fit naturally on a
   hold, and unlike volume there is no argument about where it belongs —
