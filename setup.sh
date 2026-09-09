@@ -18,6 +18,10 @@
 #   sudo reboot
 #   ./setup.sh --verify        check an existing install, change nothing
 #
+# Add --rtc to use the DS3231 on the 2.13" e-Paper HAT+. Off by default: the
+# plain HAT has no RTC, and the overlay would bind to nothing. Keeping time
+# across a power cut also needs a cell on the board's JST connector.
+#
 # Safe to re-run. It will not overwrite an existing mopidy.conf or pull over a
 # checkout you may have edited; it reports what is missing instead.
 
@@ -27,6 +31,7 @@ EPAPER_REPO=https://github.com/murrayhack/mopidy-epaper.git
 PAPERPOD_REPO=https://github.com/murrayhack/paperpod.git
 
 PROBLEMS=0
+WANT_RTC=0
 
 # ---------------------------------------------------------------- output ---
 
@@ -108,7 +113,8 @@ install_packages() {
     apt-get install -y -qq \
         git mopidy mopidy-local \
         python3-pil python3-pykka python3-spidev python3-gpiozero python3-lgpio \
-        python3-pip python3-pytest fonts-dejavu-core alsa-utils curl ffmpeg
+        python3-pip python3-pytest fonts-dejavu-core alsa-utils curl ffmpeg \
+        i2c-tools
     ok "packages installed"
 }
 
@@ -156,9 +162,65 @@ configure_boot() {
         changed=1
     fi
 
+    # Only the HAT+ carries a DS3231; on the plain HAT this overlay binds to
+    # nothing, so it is opt-in rather than assumed.
+    if [ "$WANT_RTC" = 1 ]; then
+        if grep -qE '^dtoverlay=i2c-rtc,ds3231' "$CONFIG_TXT"; then
+            ok "ds3231 overlay already present"
+        else
+            printf 'dtoverlay=i2c-rtc,ds3231\n' >> "$CONFIG_TXT"
+            info "added dtoverlay=i2c-rtc,ds3231"
+            changed=1
+        fi
+    fi
+
     if [ "$changed" = 1 ]; then
         warn "boot config changed — a reboot is needed before this takes effect"
     fi
+}
+
+# Is the DS3231 answering on the main I2C bus? Reads the 0x60 row of
+# i2cdetect, where 0x68 is the tenth field: "68" is the chip unclaimed, "UU" is
+# the kernel's RTC driver already bound to it.
+ds3231_present() {
+    command -v i2cdetect >/dev/null || return 1
+    i2cdetect -y 1 2>/dev/null \
+        | awk '/^60:/ { exit ($10 == "68" || $10 == "UU") ? 0 : 1 }'
+}
+
+configure_rtc() {
+    [ "$WANT_RTC" = 1 ] || return 0
+    step "Real-time clock"
+
+    # dtparam=i2c_arm=on brings up the controller, but /dev/i2c-* only appears
+    # once this module is loaded -- which is what i2cdetect talks to. The
+    # kernel's RTC driver binds straight to the chip and does not need it, so
+    # this is purely so the bus can be inspected.
+    if [ -f /etc/modules-load.d/i2c-dev.conf ]; then
+        ok "i2c-dev loads at boot"
+    else
+        printf 'i2c-dev\n' > /etc/modules-load.d/i2c-dev.conf
+        info "wrote /etc/modules-load.d/i2c-dev.conf"
+    fi
+    modprobe i2c-dev 2>/dev/null || warn "could not load i2c-dev now; a reboot will"
+
+    if [ -e /sys/class/rtc/rtc0/time ]; then
+        ok "RTC bound as $(cat /sys/class/rtc/rtc0/name 2>/dev/null || echo rtc0)"
+        # Seed it from system time, which NTP has usually corrected by now. An
+        # unseeded DS3231 reads back an arbitrary date and looks broken.
+        if hwclock -w 2>/dev/null; then
+            ok "wrote system time to the RTC"
+        else
+            warn "could not write to the RTC (hwclock -w)"
+        fi
+    elif ds3231_present; then
+        info "DS3231 answering at 0x68 — /dev/rtc0 appears after a reboot"
+    else
+        warn "no DS3231 at 0x68: is this the HAT+ rather than the plain HAT?"
+    fi
+
+    warn "the RTC only keeps time unpowered if a cell is fitted to the"
+    warn "board's JST connector — without one it resets on every power cut"
 }
 
 add_groups() {
@@ -399,6 +461,17 @@ verify() {
         bad "epaper not among Mopidy's enabled extensions (journalctl -u mopidy -b)"
     fi
 
+    # Checked only when configured, so a plain-HAT install is not nagged about
+    # hardware it does not have. Read through sysfs rather than `hwclock -r`,
+    # which needs root -- and --verify is meant to run without sudo.
+    if [ -n "$CONFIG_TXT" ] && grep -qE '^dtoverlay=i2c-rtc,ds3231' "$CONFIG_TXT" 2>/dev/null; then
+        if [ -r /sys/class/rtc/rtc0/time ]; then
+            ok "RTC readable ($(cat /sys/class/rtc/rtc0/date) $(cat /sys/class/rtc/rtc0/time) UTC)"
+        else
+            bad "the ds3231 overlay is configured but /sys/class/rtc/rtc0 is not readable"
+        fi
+    fi
+
     if command -v pinctrl >/dev/null; then
         if pinctrl get 18 2>/dev/null | grep -q 'a0'; then
             ok "GPIO 18 is in ALT0 for I2S"
@@ -430,7 +503,16 @@ verify() {
 
 # ------------------------------------------------------------------- main ---
 
-if [ "${1:-}" = --verify ]; then
+do_verify=0
+for arg in "$@"; do
+    case "$arg" in
+        --verify) do_verify=1 ;;
+        --rtc)    WANT_RTC=1 ;;
+        *) die "unknown option: $arg (expected --verify and/or --rtc)" ;;
+    esac
+done
+
+if [ "$do_verify" = 1 ]; then
     # In an if, so set -e does not pre-empt the exit code we want to return.
     if verify; then exit 0; else exit 1; fi
 fi
@@ -441,6 +523,7 @@ fi
 
 install_packages
 configure_boot
+configure_rtc
 add_groups
 clone_repos
 install_extension

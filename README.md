@@ -32,10 +32,10 @@ the buttons out and the panel still works, driven by the web remote at
 ## Hardware
 
 - Raspberry Pi Zero 2 W
-- Waveshare 2.13" e-Paper HAT, **V4** (250×122)
+- Waveshare 2.13" e-Paper HAT, **V4** (250×122) — the HAT+ carries a DS3231 RTC on I2C, the plain HAT does not
 - PCM5100A I2S DAC breakout
 - 5 momentary buttons
-- A DS3231 RTC on I2C (optional)
+- A backup cell on the HAT+'s 2-pin JST connector, if you want the RTC to keep time unpowered (optional)
 
 The panel and the DAC both want the 40-pin header, so the panel is wired off
 it with jumpers.
@@ -100,10 +100,11 @@ cross-referenced. Pin 1 is the corner nearest the SD card.
 the panel's charge pump, and pin 12, which is I2S BCLK and must not be given
 to the panel's PWR.
 
-**Free to use:** 7, 8, 10, 13, 15, 16, 20, 25, 32, 34 — plus 17 (3.3V) if the
-RTC is a separate module and needs power. Leave 21 and 26 alone (SPI MISO and
-CE1), 27 and 28 alone (HAT EEPROM), and 38 alone (I2S claims it with the
-overlay loaded, even though nothing is wired to it).
+**Free to use:** 7, 8, 10, 13, 15, 16, 20, 25, 32, 34 — plus 17 (3.3V) if you
+are adding an RTC as a separate module rather than using the HAT+'s onboard
+one. Leave 21 and 26 alone (SPI MISO and CE1), 27 and 28 alone (HAT EEPROM),
+and 38 alone (I2S claims it with the overlay loaded, even though nothing is
+wired to it).
 
 The five buttons share the single ground at pin 30, so they need six wires
 between them rather than ten.
@@ -120,6 +121,27 @@ controller knows.
 it is also mopidy-epaper's default PWR pin. Set `pwr_pin =` in `mopidy.conf`
 (see below) or the extension claims it when it starts, pulls it out of ALT0,
 and the audio goes quiet with nothing in any log.
+
+### Real-time clock
+
+The HAT+ has a DS3231 on the I2C bus at `0x68`; the plain 2.13" HAT has none.
+It is off by default because the overlay would bind to nothing on the plain
+board:
+
+```sh
+sudo ./setup.sh --rtc
+```
+
+That adds `dtoverlay=i2c-rtc,ds3231`, makes `i2c-dev` load at boot so
+`i2cdetect -y 1` can see the bus, and seeds the chip from system time. After a
+reboot the kernel sets the clock from the RTC before NTP, so the Pi boots with
+the right time even with no network.
+
+**It needs a cell on the board's 2-pin JST connector to keep time while
+unpowered.** With nothing fitted the DS3231 works fine as long as the Pi has
+power, and forgets everything the moment it does not — which is the whole
+reason to have it. The real test is a full power-off, not a reboot: cut power,
+boot with wifi unavailable, and check `date`.
 
 ## Software
 
