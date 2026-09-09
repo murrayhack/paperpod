@@ -108,7 +108,7 @@ install_packages() {
     apt-get install -y -qq \
         git mopidy mopidy-local \
         python3-pil python3-pykka python3-spidev python3-gpiozero python3-lgpio \
-        python3-pip python3-pytest fonts-dejavu-core alsa-utils curl
+        python3-pip python3-pytest fonts-dejavu-core alsa-utils curl ffmpeg
     ok "packages installed"
 }
 
@@ -241,6 +241,51 @@ EOF
     warn "Mopidy's default softwaremixer is what makes volume work at all"
 }
 
+seed_music() {
+    step "Music library"
+    local music_dir="$TARGET_HOME/music"
+
+    if [ ! -d "$music_dir" ]; then
+        as_user mkdir -p "$music_dir"
+        info "created $music_dir"
+    else
+        ok "$music_dir exists"
+    fi
+
+    # Generate a test file rather than fetching one: no licensing question, no
+    # dependency on a URL outlasting the script. Tagged, because the panel's
+    # whole job is rendering metadata, and three minutes long so the progress
+    # bar has somewhere to go. Quiet on purpose — it is a sine wave.
+    local test_file="$music_dir/paperpod-test-tone.mp3"
+    if [ -e "$test_file" ]; then
+        ok "test tone already present"
+    elif ! find "$music_dir" -type f \
+            \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.m4a' \) \
+            -print -quit | grep -q .; then
+        if command -v ffmpeg >/dev/null; then
+            as_user ffmpeg -loglevel error -f lavfi \
+                -i "sine=frequency=440:duration=180" \
+                -filter:a "volume=0.1" \
+                -metadata title="Test Tone" \
+                -metadata artist="paperpod" \
+                -metadata album="Setup" \
+                "$test_file"
+            info "wrote a tagged 3-minute test tone"
+        else
+            warn "ffmpeg not installed, so no test tone — add your own music"
+        fi
+    else
+        ok "music already in $music_dir"
+    fi
+
+    if reboot_pending; then
+        warn "skipping the library scan until after the reboot"
+        return
+    fi
+
+    as_user mopidy --config "$MOPIDY_CONF" local scan 2>&1 | tail -1 | sed 's/^/    /'
+}
+
 write_units() {
     step "systemd units"
 
@@ -367,10 +412,11 @@ clone_repos
 install_extension
 write_mopidy_conf
 write_units
+seed_music
 enable_services
 
 step "Done"
-info "Put some music in $TARGET_HOME/music and run: mopidy local scan"
+info "Add your own music to $TARGET_HOME/music, then: mopidy local scan"
 info "Wire the buttons to GPIO 5, 6, 13, 16 and 26, each to a shared ground."
 info "The panel needs 5V as well as 3.3V — see the header diagram in README.md."
 if reboot_pending; then
