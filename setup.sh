@@ -92,7 +92,7 @@ install_packages() {
     apt-get install -y -qq \
         git mopidy mopidy-local \
         python3-pil python3-pykka python3-spidev python3-gpiozero python3-lgpio \
-        python3-pytest fonts-dejavu-core alsa-utils curl
+        python3-pip python3-pytest fonts-dejavu-core alsa-utils curl
     ok "packages installed"
 }
 
@@ -186,7 +186,10 @@ install_extension() {
     # the apt Pillow does not satisfy the pin and rebuild it from source,
     # which takes a very long time on a Pi Zero and shadows the apt version.
     # Editable, so a git pull is the whole update procedure.
-    pip install --break-system-packages --no-deps -e "$EPAPER_DIR" --quiet
+    #
+    # Invoked as `python3 -m pip` rather than `pip`: sudo resets PATH to
+    # secure_path, and a bare `pip` is not reliably on it.
+    python3 -m pip install --break-system-packages --no-deps -e "$EPAPER_DIR" --quiet
     ok "installed editable from $EPAPER_DIR"
     # paperpod needs no install: its unit runs from the checkout.
 }
