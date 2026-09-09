@@ -182,6 +182,28 @@ python3 -m paperpod.app --verbose
 
 ## Running on boot
 
+### The short way
+
+From a clean Raspberry Pi OS image, `setup.sh` does everything below —
+packages, `config.txt`, both clones, the extension install, `mopidy.conf`, both
+systemd units — and then checks its own work:
+
+```sh
+sudo ./setup.sh
+sudo reboot
+./setup.sh --verify
+```
+
+It is safe to re-run, and it will not overwrite an existing `mopidy.conf` or
+pull over a checkout you may have edited — it reports what is missing instead.
+`--verify` changes nothing, so it is also the quickest way to work out why a
+working player has stopped working.
+
+The rest of this section is what the script does, and why each part of it
+matters. Worth reading once even if you never run any of it by hand.
+
+### The long way
+
 Two services, and Mopidy's needs adjusting before either will work.
 
 ### Mopidy

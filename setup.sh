@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+#
+# Set up a paperpod from a clean Raspberry Pi OS image.
+#
+# Everything here was learned the hard way, and almost all of it fails
+# silently when missed: a panel with no 5V initialises and draws nothing, a
+# PWR pin left on GPIO 18 kills the audio without raising, lgpio in an
+# unwritable working directory sends gpiozero down to a sysfs backend the
+# kernel dropped, and `systemctl start` without `enable` works perfectly until
+# the first reboot. So the script does the install and then checks its work.
+#
+#   sudo ./setup.sh            install and configure
+#   ./setup.sh --verify        check an existing install, change nothing
+#
+# Safe to re-run. It will not overwrite an existing mopidy.conf or pull over a
+# checkout you may have edited; it reports what is missing instead.
+
+set -euo pipefail
+
+EPAPER_REPO=https://github.com/murrayhack/mopidy-epaper.git
+PAPERPOD_REPO=https://github.com/murrayhack/paperpod.git
+
+REBOOT_REQUIRED=0
+PROBLEMS=0
+
+# ---------------------------------------------------------------- output ---
+
+BOLD=$(tput bold 2>/dev/null || true)
+RESET=$(tput sgr0 2>/dev/null || true)
+
+step() { printf '\n%s==> %s%s\n' "$BOLD" "$1" "$RESET"; }
+info() { printf '    %s\n' "$1"; }
+ok()   { printf '    ok    %s\n' "$1"; }
+bad()  { printf '    FAIL  %s\n' "$1"; PROBLEMS=$((PROBLEMS + 1)); }
+warn() { printf '    note  %s\n' "$1"; }
+die()  { printf '\nerror: %s\n' "$1" >&2; exit 1; }
+
+# ------------------------------------------------------------ who and where ---
+
+# Run under sudo, but clone and configure as the human. SUDO_USER is who
+# invoked it; falling back to the current user covers running --verify plainly.
+TARGET_USER=${SUDO_USER:-$(id -un)}
+if [ "$TARGET_USER" = root ]; then
+    die "run this with sudo as a normal user, not as root"
+fi
+TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+if [ ! -d "$TARGET_HOME" ]; then
+    die "no home directory for $TARGET_USER"
+fi
+
+EPAPER_DIR="$TARGET_HOME/mopidy-epaper"
+PAPERPOD_DIR="$TARGET_HOME/paperpod"
+MOPIDY_CONF="$TARGET_HOME/.config/mopidy/mopidy.conf"
+
+# Bookworm and later moved the boot partition. Support both rather than
+# guessing wrong and silently editing a file nothing reads.
+if [ -f /boot/firmware/config.txt ]; then
+    CONFIG_TXT=/boot/firmware/config.txt
+elif [ -f /boot/config.txt ]; then
+    CONFIG_TXT=/boot/config.txt
+else
+    CONFIG_TXT=
+fi
+
+as_user() { sudo -u "$TARGET_USER" -H "$@"; }
+
+# ------------------------------------------------------------------ steps ---
+
+install_packages() {
+    step "Installing packages"
+    apt-get update -qq
+    # Mopidy from apt lives in the system Python, so its extensions must too.
+    # Letting apt supply the dependencies gives pip nothing to resolve, which
+    # matters on a Pi Zero: pip may otherwise rebuild Pillow from source.
+    apt-get install -y -qq \
+        git mopidy mopidy-local \
+        python3-pil python3-pykka python3-spidev python3-gpiozero python3-lgpio \
+        python3-pytest fonts-dejavu-core alsa-utils curl
+    ok "packages installed"
+}
+
+configure_boot() {
+    step "Configuring $CONFIG_TXT"
+    [ -n "$CONFIG_TXT" ] || die "no config.txt found; is this a Raspberry Pi?"
+
+    local changed=0
+
+    enable_param() {
+        local param=$1
+        if grep -qE "^${param}$" "$CONFIG_TXT"; then
+            ok "$param already set"
+        elif grep -qE "^#\s*${param}$" "$CONFIG_TXT"; then
+            sed -i "s|^#\s*${param}$|${param}|" "$CONFIG_TXT"
+            info "uncommented $param"
+            changed=1
+        else
+            printf '\n%s\n' "$param" >> "$CONFIG_TXT"
+            info "added $param"
+            changed=1
+        fi
+    }
+
+    enable_param "dtparam=spi=on"
+    enable_param "dtparam=i2c_arm=on"
+
+    # The onboard device would otherwise compete with the DAC to be card 0.
+    if grep -qE '^dtparam=audio=on' "$CONFIG_TXT"; then
+        sed -i 's|^dtparam=audio=on|#dtparam=audio=on|' "$CONFIG_TXT"
+        info "commented out dtparam=audio=on"
+        changed=1
+    else
+        ok "onboard audio already off"
+    fi
+
+    # hifiberry-dac is the overlay for the PCM510xA family: hardware
+    # configured, no I2C control. It brings up the I2S node itself, so
+    # dtparam=i2s stays out of it.
+    if grep -qE '^dtoverlay=hifiberry-dac' "$CONFIG_TXT"; then
+        ok "hifiberry-dac overlay already present"
+    else
+        printf 'dtoverlay=hifiberry-dac\n' >> "$CONFIG_TXT"
+        info "added dtoverlay=hifiberry-dac"
+        changed=1
+    fi
+
+    if [ "$changed" = 1 ]; then
+        REBOOT_REQUIRED=1
+        warn "boot config changed — a reboot is needed before this takes effect"
+    fi
+}
+
+add_groups() {
+    step "Group membership"
+    # Stock Raspberry Pi OS puts the first user in these already, but a fresh
+    # image with a different account may not be, and the services fail
+    # confusingly without them.
+    for group in gpio spi i2c audio; do
+        if getent group "$group" >/dev/null; then
+            if id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx "$group"; then
+                ok "$TARGET_USER already in $group"
+            else
+                usermod -aG "$group" "$TARGET_USER"
+                info "added $TARGET_USER to $group"
+            fi
+        fi
+    done
+}
+
+clone_repos() {
+    step "Fetching the code"
+    clone_one() {
+        local url=$1 dir=$2
+        if [ -d "$dir/.git" ]; then
+            # Deliberately not pulling: the checkout may have local work, and
+            # a surprise merge is a worse outcome than a stale copy.
+            ok "$(basename "$dir") already cloned — pull it yourself if stale"
+        else
+            as_user git clone --quiet "$url" "$dir"
+            info "cloned $(basename "$dir")"
+        fi
+    }
+    clone_one "$EPAPER_REPO" "$EPAPER_DIR"
+    clone_one "$PAPERPOD_REPO" "$PAPERPOD_DIR"
+}
+
+install_extension() {
+    step "Installing mopidy-epaper"
+    # --no-deps because apt already supplied them; without it pip may decide
+    # the apt Pillow does not satisfy the pin and rebuild it from source,
+    # which takes a very long time on a Pi Zero and shadows the apt version.
+    # Editable, so a git pull is the whole update procedure.
+    pip install --break-system-packages --no-deps -e "$EPAPER_DIR" --quiet
+    ok "installed editable from $EPAPER_DIR"
+    # paperpod needs no install: its unit runs from the checkout.
+}
+
+write_mopidy_conf() {
+    step "Mopidy configuration"
+    if [ -f "$MOPIDY_CONF" ]; then
+        ok "$MOPIDY_CONF exists — leaving it alone"
+        grep -qE '^\s*pwr_pin\s*=\s*$' "$MOPIDY_CONF" \
+            || bad "add 'pwr_pin =' under [epaper], or the panel claims GPIO 18 from I2S"
+        grep -qE '^\s*output\s*=.*sndrpihifiberry' "$MOPIDY_CONF" \
+            || warn "no hifiberry output set under [audio]; autoaudiosink may pick HDMI"
+        return
+    fi
+
+    as_user mkdir -p "$(dirname "$MOPIDY_CONF")"
+    as_user tee "$MOPIDY_CONF" >/dev/null <<EOF
+[audio]
+output = alsasink device=sysdefault:CARD=sndrpihifiberry
+
+[local]
+media_dir = $TARGET_HOME/music
+
+[epaper]
+enabled = true
+# GPIO 18 is I2S BCLK on this build, so the panel must not claim it for PWR.
+pwr_pin =
+EOF
+    info "wrote $MOPIDY_CONF"
+    warn "leave the mixer alone — the PCM5100A has no hardware volume, so"
+    warn "Mopidy's default softwaremixer is what makes volume work at all"
+}
+
+write_units() {
+    step "systemd units"
+
+    # The packaged mopidy.service runs as the mopidy user against
+    # /etc/mopidy/mopidy.conf. A drop-in rather than a replacement, so package
+    # upgrades leave it alone and the unit keeps its name — paperpod orders
+    # itself after mopidy.service.
+    mkdir -p /etc/systemd/system/mopidy.service.d
+    tee /etc/systemd/system/mopidy.service.d/override.conf >/dev/null <<EOF
+[Service]
+User=$TARGET_USER
+SupplementaryGroups=audio gpio spi
+# lgpio puts a notification FIFO in the working directory, and systemd's
+# default of / is not writable by the service user. When lgpio fails gpiozero
+# falls through to the sysfs backend modern kernels have dropped, and the
+# panel dies with an EINVAL from deep inside gpiozero.
+WorkingDirectory=$TARGET_HOME
+# So that fallback cannot happen quietly again.
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+# The empty assignment clears the packaged command; systemd rejects the unit
+# without it.
+ExecStart=
+ExecStart=/usr/bin/mopidy --config $MOPIDY_CONF
+EOF
+    ok "wrote the mopidy.service override"
+
+    # Generated from the shipped unit so the user and paths match this machine.
+    sed -e "s|^User=.*|User=$TARGET_USER|" \
+        -e "s|^WorkingDirectory=.*|WorkingDirectory=$PAPERPOD_DIR|" \
+        "$PAPERPOD_DIR/systemd/paperpod.service" \
+        > /etc/systemd/system/paperpod.service
+    ok "wrote paperpod.service"
+
+    systemctl daemon-reload
+}
+
+enable_services() {
+    step "Enabling services"
+    # enable, not start: start runs it now and it is gone after a reboot.
+    systemctl enable --quiet mopidy paperpod
+    ok "both enabled at boot"
+
+    if [ "$REBOOT_REQUIRED" = 1 ]; then
+        warn "not starting them — the boot config changed, so reboot first"
+    else
+        systemctl restart mopidy paperpod
+        ok "both started"
+    fi
+}
+
+# ----------------------------------------------------------------- verify ---
+
+verify() {
+    step "Checking the install"
+
+    for unit in mopidy paperpod; do
+        if [ "$(systemctl is-enabled "$unit" 2>/dev/null || true)" = enabled ]; then
+            ok "$unit enabled at boot"
+        else
+            bad "$unit is not enabled — it will not come back after a reboot"
+        fi
+        if systemctl is-active --quiet "$unit"; then
+            ok "$unit running"
+        else
+            bad "$unit is not running (journalctl -u $unit -b)"
+        fi
+    done
+
+    if journalctl -u mopidy -b --no-pager 2>/dev/null | grep -q 'Enabled extensions:.*epaper'; then
+        ok "Mopidy loaded the epaper extension"
+    else
+        bad "epaper not among Mopidy's enabled extensions"
+    fi
+
+    if command -v pinctrl >/dev/null; then
+        if pinctrl get 18 2>/dev/null | grep -q 'a0'; then
+            ok "GPIO 18 is in ALT0 for I2S"
+        else
+            bad "GPIO 18 is not I2S BCLK — check 'pwr_pin =' and the overlay"
+        fi
+    fi
+
+    if aplay -l 2>/dev/null | grep -q sndrpihifiberry; then
+        ok "the DAC is present"
+    else
+        bad "no hifiberry card — check the overlay and reboot"
+    fi
+
+    if curl -sf -m 5 http://localhost:6680/epaper/status >/dev/null 2>&1; then
+        ok "the panel's input API is answering"
+    else
+        bad "/epaper/status is not answering"
+    fi
+
+    printf '\n'
+    if [ "$PROBLEMS" = 0 ]; then
+        printf '%sEverything checks out.%s\n' "$BOLD" "$RESET"
+    else
+        printf '%s%d problem(s) above.%s\n' "$BOLD" "$PROBLEMS" "$RESET"
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------- main ---
+
+if [ "${1:-}" = --verify ]; then
+    # In an if, so set -e does not pre-empt the exit code we want to return.
+    if verify; then exit 0; else exit 1; fi
+fi
+
+if [ "$(id -u)" != 0 ]; then
+    die "run with sudo (or pass --verify to check without changing anything)"
+fi
+
+install_packages
+configure_boot
+add_groups
+clone_repos
+install_extension
+write_mopidy_conf
+write_units
+enable_services
+
+step "Done"
+info "Put some music in $TARGET_HOME/music and run: mopidy local scan"
+info "Wire the buttons to GPIO 5, 6, 13, 16 and 26, each to a shared ground."
+info "The panel needs 5V as well as 3.3V — see the header diagram in README.md."
+if [ "$REBOOT_REQUIRED" = 1 ]; then
+    printf '\n    %sReboot, then run: ./setup.sh --verify%s\n' "$BOLD" "$RESET"
+else
+    printf '\n    %sNow run: ./setup.sh --verify%s\n' "$BOLD" "$RESET"
+fi

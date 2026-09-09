@@ -96,18 +96,24 @@ All five are in the README now, which is the point of having found them.
   6 move the cursor rather than change volume, wait out `menu_timeout`,
   confirm they go back to volume). Worth doing on jumpers, since a
   mapping bug is far easier to fix before anything is soldered.
-- **A setup script for a clean image.** Everything currently lives in
-  two READMEs and has to be retyped, which is fine once and miserable
-  twice — and the failures it guards against are all silent. It would
-  need to: enable SPI and I2C; add the `hifiberry-dac` overlay and
-  comment out `dtparam=audio=on`; apt-install the Python packages; clone
-  both repositories; install mopidy-epaper into the system Python with
-  `--break-system-packages --no-deps`; write `mopidy.conf` with
-  `pwr_pin =` and the `alsasink` output; drop in the `mopidy.service`
-  override and paperpod's unit; and `enable` — not merely `start` —
-  both. Verifying afterwards matters as much as installing: check
-  `epaper` is among the enabled extensions, that `pinctrl get 18` reads
-  `a0`, and that `aplay -l` shows the DAC.
+- ~~**A setup script for a clean image.**~~ Written as `setup.sh`
+  (2026-09-09), **unverified** — never run against a clean image, which
+  is the only test that means anything. Covers packages, `config.txt`,
+  groups, both clones, the editable extension install, `mopidy.conf`,
+  both systemd units and `enable`. `--verify` re-runs the checks alone,
+  changing nothing, which also makes it a diagnostic for a player that
+  has stopped working.
+
+  It derives the user and home from `SUDO_USER` rather than assuming
+  `murray`, and generates paperpod's unit from the checked-in one by
+  substituting those in — so the hardcoded paths in
+  `systemd/paperpod.service` stay accurate for this build without
+  making the script only work here.
+
+  Two deliberate refusals: it will not overwrite an existing
+  `mopidy.conf` (it checks for `pwr_pin =` and reports instead), and it
+  will not pull over an existing checkout. A surprise merge is worse
+  than a stale copy.
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
