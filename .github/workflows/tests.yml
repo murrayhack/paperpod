@@ -34,3 +34,18 @@ jobs:
 
       - name: Test
         run: python -m pytest -q
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Default severity, which setup.sh already passes with nothing to report.
+      # The optional checks are deliberately left off: enabling them adds 142
+      # notes, all of them SC2250 (brace every reference) and SC2292 ([[ ]] over
+      # [ ]) style preferences, plus SC2310/SC2312 firing on predicate functions
+      # and guarded `cat`s that are all intentional here. Nothing above note
+      # level, so turning them on would mean churning 142 sites for no
+      # correctness gain.
+      - name: Shellcheck
+        run: shellcheck setup.sh
