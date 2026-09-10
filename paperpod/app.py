@@ -169,6 +169,10 @@ class Buttons:
             # The hold already fired. Swallow the release.
             self._held.discard(pin)
             return
+        # The cache may have gone stale while the poll was backed off, and
+        # this is the moment it matters: the wrong value here means the button
+        # does something visible and unasked-for.
+        self._mode.refresh_if_stale()
         self.dispatch(self._bindings[pin].press(self._mode.in_menu), pin=pin)
 
     def dispatch(self, command, pin=None, held=False):
@@ -210,6 +214,12 @@ def main(argv=None):
         help="Seconds between panel status polls (default: %(default)s)",
     )
     parser.add_argument(
+        "--idle-poll-interval",
+        type=float,
+        default=30.0,
+        help="Seconds between polls once untouched (default: %(default)s)",
+    )
+    parser.add_argument(
         "--volume-step",
         type=int,
         default=5,
@@ -224,7 +234,11 @@ def main(argv=None):
     )
 
     player = Player(base_url=args.url, volume_step=args.volume_step)
-    mode = PanelMode(player, interval=args.poll_interval)
+    mode = PanelMode(
+        player,
+        interval=args.poll_interval,
+        idle_interval=args.idle_poll_interval,
+    )
     mode.start()
     buttons = Buttons(player, mode)
     buttons.start()

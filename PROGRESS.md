@@ -96,6 +96,8 @@ repeating:
 | `bounce_time=None` | 6.05% vs 6.10%. Not the debounce timer either. |
 | libgpiod, one blocking `wait_edge_events` | **0.05%** |
 | The rewritten daemon in service | **0.20%**, against 4.64% before |
+| Mopidy, BUSY as InputDevice | 4.07%, against 6.30% before |
+| Mopidy with nothing polling it | **0.12%** |
 
 Two traps in the measuring. `CPUUsageNSec` counts CPU *time*, not cycles, so
 under `ondemand` the same work reads ~40% apart depending on clock — which is
@@ -136,6 +138,26 @@ every 2s, now measurable for the first time with lgpio's noise gone. Worth
 noting what that says in hindsight: the poll loop, the first thing suspected
 and the one thing changed twice while chasing this, was about a thirtieth of
 what lgpio was burning.
+
+### The sting in the tail
+
+With both alert threads gone, Mopidy still idled at 4.07%. Per-thread again,
+then `strace`: `accept4`, `recvfrom`, `sendto`, five connections per ten
+seconds -- the HTTP server, serving paperpod's 2s status poll. Stopping
+paperpod dropped Mopidy to **0.12%**.
+
+So the poll loop was a real cost after all, and every measurement that said
+otherwise was taken in the wrong process. It costs ~0.15% to make the request
+and ~4% to serve it: Tornado wakes, the epaper frontend is asked, a Pykka
+actor answers, JSON is serialised, twice a second, forever.
+
+The fix is in `mode.py`: poll at 2s for 30s after any activity, back off to
+30s when untouched, and refresh synchronously before interpreting the first
+press after a quiet spell. The panel only changes mode by itself through
+`menu_timeout`, which always follows a press, so the fast window covers it;
+the synchronous refresh covers the case with no press behind it at all, such
+as the web remote. One press pays a round trip; none of them act on a stale
+cache.
 
 Not measured: actual power draw. 4-6% of one core is perhaps 10-20mW against a
 few hundred, so the battery gain may be small; the wakeup argument suggests

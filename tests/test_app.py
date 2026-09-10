@@ -70,6 +70,10 @@ class FakeMode:
     def __init__(self, in_menu=False):
         self.in_menu = in_menu
         self.noted = []
+        self.refreshes = 0
+
+    def refresh_if_stale(self, max_age=None):
+        self.refreshes += 1
 
     def note(self, command):
         self.noted.append(command)
@@ -277,3 +281,34 @@ def test_the_loop_survives_a_failure(rig, caplog):
 
     assert len(waits) >= 2, "the loop stopped at the first failure"
     assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
+def test_a_press_refreshes_the_mode_before_interpreting_it(rig):
+    """The cache can be stale, and this is the press that would act on it.
+
+    Polling backs off while nothing is happening, so by the time someone
+    reaches for a button the cached mode may be half a minute old and the web
+    remote may have moved the panel meanwhile. Deciding what the press means
+    before checking is how a button does something unasked-for.
+    """
+    buttons, source, clock, _, mode = rig
+    source.batches = [[(13, PRESS)], [(13, RELEASE)]]
+
+    buttons.tick()
+    assert mode.refreshes == 0  # nothing to interpret yet
+
+    clock.advance(0.1)
+    buttons.tick()
+    assert mode.refreshes == 1
+
+
+def test_a_hold_does_not_refresh(rig):
+    """A hold command is the same in both modes, so there is nothing to ask."""
+    buttons, source, clock, _, mode = rig
+    source.batches = [[(13, PRESS)]]
+
+    buttons.tick()
+    clock.advance(0.6)
+    buttons.tick()
+
+    assert mode.refreshes == 0
