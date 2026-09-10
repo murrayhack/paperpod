@@ -258,22 +258,43 @@ found two bugs that no amount of reading would have:
 Both are the same shape as the five failures under bring-up: nothing
 raised, and the wrong state looked like the right one.
 
+## Runs on battery (2026-09-10)
+
+A PiSugar 3 under the Zero carries the whole build — Pi Zero 2 W, the DAC,
+the panel, five buttons and wifi — with the USB lead out. It is a portable
+player now, not a bench setup.
+
+That was not obvious beforehand and the diagnosis went badly. Wifi failed to
+associate when the battery first went on, everything else running. The
+hypothesis was that the supply could not carry the wifi init spike on top of
+the DAC and panel; the evidence appeared to support it, because an older card
+booted with wifi fine on the same battery. That card had never had setup.sh
+run on it, so it had no `hifiberry-dac` and no SPI — the DAC and panel were
+idle, and it was never a fair comparison. Pulling the USB lead on the working
+card settled it: the PiSugar carries the lot.
+
+What actually ailed the other card is **unknown**. It was not the PiSugar and
+not `config.txt`, which was read off the card and is clean. It was abandoned
+rather than diagnosed. Worth remembering if a card misbehaves like that again.
+
+Now that it runs on a measurable battery, today's CPU work has a number
+attached to it at last: `pisugar-server` reports charge over I2C, so drain
+rate converts straight to hours of runtime.
+
 ## Backlog
 
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
   rather than ten.
-- **A backup cell for the RTC.** The DS3231 on the HAT+ is enabled and
-  keeping correct time, but nothing is fitted to the board's 2-pin JST
-  connector, so it resets on every power cut — which is the one case it
-  exists for. Waveshare specify a rechargeable lithium cell at 3/3.3V;
-  their wiki for this board is still a placeholder, so check the
-  silkscreen for polarity before connecting anything. Until then the
-  overlay does real work while the Pi is powered and nothing at all
-  across a power-off, and NTP hides the difference whenever there is
-  network. The test that proves it: cut power, boot with wifi
-  unavailable, check `date`.
+- **Decide which RTC.** A PiSugar 3 is now fitted and has its own RTC,
+  backed by the main cell — so it keeps time across a power cut with
+  nothing extra to buy, which the HAT+'s DS3231 cannot without a cell on
+  its JST connector. The catch is that PiSugar is documented as occupying
+  0x57 **and 0x68**, and 0x68 is where the HAT+'s DS3231 already sits. Two
+  devices on one address do not fail cleanly and `i2cdetect` cannot show
+  it, since scanning finds one answer either way. `--rtc` stays off until
+  this is settled.
 - **A case.**
 - **Seek.** `seek_forward` / `seek_back` by 30s would fit naturally on a
   hold, and unlike volume there is no argument about where it belongs —
