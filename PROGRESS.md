@@ -95,6 +95,7 @@ repeating:
 | `strace -c` on it | 15,379 `ppoll` in 10s ≈ 1540/s, ~30us each ≈ 4.6%. Matches. |
 | `bounce_time=None` | 6.05% vs 6.10%. Not the debounce timer either. |
 | libgpiod, one blocking `wait_edge_events` | **0.05%** |
+| The rewritten daemon in service | **0.20%**, against 4.64% before |
 
 Two traps in the measuring. `CPUUsageNSec` counts CPU *time*, not cycles, so
 under `ondemand` the same work reads ~40% apart depending on clock — which is
@@ -121,6 +122,20 @@ What that bought, beyond 120x less idle CPU:
 mopidy-epaper still uses gpiozero for the panel's RST and DC pins, so
 `python3-gpiozero`, `python3-lgpio` and the mopidy override's lgpio settings
 all stay. Only paperpod left.
+
+Confirmed on hardware 2026-09-10: taps fire on release with the right
+command on all five buttons, the mode switch still resolves `select` rather
+than `play_pause` in the menu, and a hold on 13 fires `next_track` with no
+press behind it. That was the part with no test under it — everything else
+runs against the fake source, but `GpiodSource`'s edge decoding could only be
+checked by pressing something. Inverted polarity would have shown up as taps
+firing on press-down and holds never coming due.
+
+The 0.20% in service against 0.05% standalone is `PanelMode` polling Mopidy
+every 2s, now measurable for the first time with lgpio's noise gone. Worth
+noting what that says in hindsight: the poll loop, the first thing suspected
+and the one thing changed twice while chasing this, was about a thirtieth of
+what lgpio was burning.
 
 Not measured: actual power draw. 4-6% of one core is perhaps 10-20mW against a
 few hundred, so the battery gain may be small; the wakeup argument suggests
