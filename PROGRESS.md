@@ -159,6 +159,34 @@ the synchronous refresh covers the case with no press behind it at all, such
 as the web remote. One press pays a round trip; none of them act on a stale
 cache.
 
+Confirmed on hardware 2026-09-10. Mopidy idles at **0.64%** with the backoff
+in, against 4.07% before and 0.12% for a Mopidy nobody polls. The 0.64%
+includes the first 30s after the restart, which is still inside the fast
+window; steady state is nearer 0.4%.
+
+The backoff being *safe* was checked separately from it being *cheap*, since
+a stale cache makes a button do something visible and unasked-for. With the
+poll backed off, the menu was opened through the HTTP API so that no button
+was involved and paperpod could not know:
+
+    curl -s -X POST http://localhost:6680/epaper/input/home
+    GPIO 6 pressed -> down
+
+`down`, not `volume_down` — the press refreshed before deciding what it
+meant. That is the one sequence the old code would have got wrong, and the
+only reason the backoff is allowed to exist.
+
+Where the two processes ended up, from ~11% of a core between them:
+
+| | before | after |
+| --- | --- | --- |
+| paperpod | 4.64% | ~0.20% |
+| Mopidy | 6.30% | 0.64% |
+
+Three causes, none of them where the search started: two lgpio alert threads
+watching pins nothing subscribed to, and a status poll whose cost was in the
+other process.
+
 Not measured: actual power draw. 4-6% of one core is perhaps 10-20mW against a
 few hundred, so the battery gain may be small; the wakeup argument suggests
 more. A meter inline would settle it.
