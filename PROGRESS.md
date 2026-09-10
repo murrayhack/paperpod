@@ -43,7 +43,7 @@ driven by the web remote.
 Pi Zero 2 W, Raspberry Pi OS Trixie (Python 3.13), Mopidy 3.4.2, real
 panel and a PCM5100A on `hifiberry-dac`.
 
-- [x] 23 tests pass.
+- [x] 29 tests pass.
 - [x] Both APIs reachable and returning the shapes expected —
       `/epaper/status` gives `locked`, `asleep`, `in_menu`, `running`;
       JSON-RPC gives a volume and a playback state. The tests stub
@@ -56,10 +56,27 @@ panel and a PCM5100A on `hifiberry-dac`.
 - [x] GPIO 13 tapped toggles play and pause.
 - [x] Both services start on boot and survive a reboot.
 
-Not yet exercised: volume on 5 and 6, `back` / `previous_track` on 16,
-the menu button on 26, holding 26 for lock, and the mode switch between
-the menu and now-playing. The mapping is tested, the two ends are
-tested, but most individual buttons have not been pressed.
+### Every button, both modes (2026-09-10)
+
+Pressed on jumpers, read off `journalctl -u paperpod -f` now that
+dispatch logs the GPIO and the resolved command.
+
+| GPIO | in menu | playing | on hold |
+| --- | --- | --- | --- |
+| 5 | `up` | `volume_up` | — |
+| 6 | `down` | `volume_down` | — |
+| 13 | `select` | `play_pause` | `next_track` |
+| 16 | `back` | `previous_track` | — |
+| 26 | `home` | `home` | `toggle_lock` |
+
+Every cell fired. Two things the tests could not have shown:
+
+- **The mode switch works in the wild.** GPIO 5 logged `up` at 23:44:02
+  and `volume_up` at 23:45:34 — the same button resolving differently,
+  including `menu_timeout` dropping back to now-playing on its own.
+- **A hold really does swallow its release on hardware.** Every
+  `GPIO 13 held -> next_track` stands alone in the journal, with no
+  `pressed` line behind it.
 
 ## Bring-up: five things that fail silently
 
@@ -130,13 +147,6 @@ raised, and the wrong state looked like the right one.
 
 ## Backlog
 
-- **Press the other four buttons.** Only GPIO 13 has been exercised —
-  tap for play/pause, hold for next. Still untried: volume on 5 and 6,
-  `back` and `previous_track` on 16, the menu button on 26 and its
-  hold-to-lock, and the mode switch itself (open the menu, confirm 5 and
-  6 move the cursor rather than change volume, wait out `menu_timeout`,
-  confirm they go back to volume). Worth doing on jumpers, since a
-  mapping bug is far easier to fix before anything is soldered.
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
@@ -157,6 +167,14 @@ raised, and the wrong state looked like the right one.
   it is Mopidy's, through JSON-RPC.
 
 ## Known limitations
+
+- **`/epaper/status` can 504 during a full refresh.** Holding 26 for
+  `toggle_lock` repaints the panel, which holds the frontend actor for
+  seconds; a poll landing in that window gets a 504 from `http.py` and
+  logs a warning. Seen once, at 23:46:56 on 2026-09-09, four seconds
+  after the lock. Harmless — the next poll two seconds later succeeds —
+  but the status endpoint queueing behind a repaint is the actual cause,
+  and raising `STATUS_TIMEOUT` would not fix it.
 
 - **The mode guess can be briefly wrong.** `back` leaves the menu at the
   root and does not deeper in, and nothing here can tell which. It asks
