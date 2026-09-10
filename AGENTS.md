@@ -42,7 +42,7 @@ Tests are `pytest tests/`, run on the Pi.
 ## Layering
 
 ```
-app.py        GPIO wiring and the process — the only module importing gpiozero
+app.py        GPIO wiring and the process — the only module touching libgpiod
    ↓
 bindings.py   what each button means, as data; no I/O
 mode.py       which screen the panel is showing, cached
@@ -52,7 +52,7 @@ player.py     the two HTTP APIs, behind one small surface
 
 Two rules hold this up:
 
-1. **Only `app.py` imports gpiozero.** Everything else must be exercisable on
+1. **Only `app.py` touches the GPIO.** Everything else must be exercisable on
    any machine, which is what makes the button mapping testable without pins.
 2. **`bindings.py` is data, not behaviour.** `BUTTONS` and `COMMANDS` are
    plain dicts. Logic that inspects a press belongs in `mode.py` or `app.py`.
@@ -62,7 +62,7 @@ Two rules hold this up:
 Both are silent, which is what makes them expensive.
 
 **Pin collisions.** GPIO 18, 19, 20 and 21 are I2S; 7–11 are SPI; 17, 24 and
-25 are the panel; 2 and 3 are I2C. Claiming one of those with gpiozero does
+25 are the panel; 2 and 3 are I2C. Claiming one of those from libgpiod does
 not raise — it takes the pin out of ALT0 and the other device simply stops
 working. `tests/test_bindings.py` checks the button map against that list;
 keep it current if the hardware changes.
@@ -81,7 +81,7 @@ is only applied in one direction, a poll interval, a read-before-write — the
 reason belongs next to it.
 
 Python targets 3.9+. No formatter or linter is configured; follow the
-surrounding code. Runtime dependencies are the standard library plus gpiozero;
+surrounding code. Runtime dependencies are the standard library plus libgpiod;
 adding a third is a decision, not a detail.
 
 ## Documentation to keep current

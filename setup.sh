@@ -5,9 +5,11 @@
 # Everything here was learned the hard way, and almost all of it fails
 # silently when missed: a panel with no 5V initialises and draws nothing, a
 # PWR pin left on GPIO 18 kills the audio without raising, lgpio in an
-# unwritable working directory sends gpiozero down to a sysfs backend the
-# kernel dropped, and `systemctl start` without `enable` works perfectly until
-# the first reboot. So the script does the install and then checks its work.
+# unwritable working directory sends mopidy-epaper's gpiozero down to a sysfs
+# backend the kernel dropped, a config.txt line appended below a conditional
+# filter applies to a board this is not, and `systemctl start` without
+# `enable` works perfectly until the first reboot. So the script does the
+# install and then checks its work.
 #
 # From a clean image:
 #
@@ -110,9 +112,14 @@ install_packages() {
     # Mopidy from apt lives in the system Python, so its extensions must too.
     # Letting apt supply the dependencies gives pip nothing to resolve, which
     # matters on a Pi Zero: pip may otherwise rebuild Pillow from source.
+    #
+    # Both GPIO libraries are needed, for different consumers. paperpod reads
+    # button edges through libgpiod. mopidy-epaper still claims the panel's
+    # RST and DC pins with gpiozero, which needs lgpio under it.
     apt-get install -y -qq \
         git mopidy mopidy-local \
-        python3-pil python3-pykka python3-spidev python3-gpiozero python3-lgpio \
+        python3-pil python3-pykka python3-spidev python3-libgpiod \
+        python3-gpiozero python3-lgpio \
         python3-pip python3-pytest fonts-dejavu-core alsa-utils curl ffmpeg \
         i2c-tools
     ok "packages installed"

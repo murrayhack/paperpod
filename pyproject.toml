@@ -17,7 +17,10 @@ dependencies = []
 # Only installable on a Raspberry Pi. Kept out of the base dependencies so the
 # bindings and the HTTP client can be developed and tested anywhere.
 hardware = [
-    "gpiozero >= 2.0",
+    # libgpiod's Python bindings. On Raspberry Pi OS this comes from apt as
+    # python3-libgpiod; the wheel is here so a non-Pi checkout can still
+    # resolve the extra.
+    "gpiod >= 2.1",
 ]
 test = [
     "pytest >= 7.0",
@@ -30,7 +33,7 @@ paperpod = "paperpod.app:main"
 testpaths = ["tests"]
 # pytest puts the test directory on sys.path, not the root, so without this the
 # tests only find the package once it is installed. They should run in a fresh
-# checkout — that is the point of keeping gpiozero out of everything but app.py.
+# checkout — that is the point of keeping libgpiod out of everything but app.py.
 pythonpath = ["."]
 
 [tool.setuptools]

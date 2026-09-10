@@ -29,11 +29,11 @@ driven by the web remote.
 | Decision | Choice | Why |
 |---|---|---|
 | Not a Mopidy extension | An ordinary process speaking HTTP | Nothing here needs to live inside Mopidy, and staying outside keeps the boundary honest |
-| Runtime dependencies | Standard library only, plus gpiozero | Both APIs are plain HTTP, so urllib is enough; nothing to keep current |
+| Runtime dependencies | Standard library only, plus libgpiod | Both APIs are plain HTTP, so urllib is enough; nothing to keep current |
 | Where navigation goes | `POST /epaper/input/<action>` | The panel owns its menu state; a second copy here would drift |
 | Where volume and transport go | Mopidy's JSON-RPC | Mopidy owns the mixer and the tracklist |
 | Button mapping | Plain data in `bindings.py` | Readable, changeable and testable without a Pi |
-| gpiozero imports | `app.py` only | Everything else runs on any machine, which is what makes the mapping testable |
+| GPIO access | `app.py` only, behind an injectable source | Everything else runs on any machine, and the press/hold rules are tested without a Pi |
 | Knowing which screen is showing | Poll `/epaper/status` on a timer and cache it | It waits on the frontend actor, which a full refresh holds for a second or two — asking per press would put that in front of every button |
 | Guessing the mode ahead of the poll | Only where certain | Navigation from now-playing always opens the menu; `back` leaves it only at the root, and guessing wrong makes a button do something visible and unasked-for |
 | Volume steps | Read the current volume, then write | A local counter would drift from the web remote and other clients |
@@ -77,6 +77,54 @@ Every cell fired. Two things the tests could not have shown:
 - **A hold really does swallow its release on hardware.** Every
   `GPIO 13 held -> next_track` stands alone in the journal, with no
   `pressed` line behind it.
+
+## Idle CPU: gpiozero to libgpiod (2026-09-10)
+
+paperpod idled at 4-6% of a core doing nothing. On a battery build that is
+worth chasing, and the wakeup count matters more than the percentage: nothing
+that wakes 1540 times a second lets the core reach a low-power state.
+
+The chain, because two plausible answers were wrong and are worth not
+repeating:
+
+| Step | Result |
+| --- | --- |
+| `--poll-interval 30` (15x fewer polls) | 6.35%, *higher* than at 2s. Not the poll loop. |
+| Per-thread CPU from `/proc/PID/task/*/stat` | One thread held 4.11% of 4.7%. |
+| `py-spy dump` | That thread has **no Python frames** — it is native, inside lgpio. |
+| `strace -c` on it | 15,379 `ppoll` in 10s ≈ 1540/s, ~30us each ≈ 4.6%. Matches. |
+| `bounce_time=None` | 6.05% vs 6.10%. Not the debounce timer either. |
+| libgpiod, one blocking `wait_edge_events` | **0.05%** |
+
+Two traps in the measuring. `CPUUsageNSec` counts CPU *time*, not cycles, so
+under `ondemand` the same work reads ~40% apart depending on clock — which is
+why the 30s-poll run looked worse. And a cumulative counter divided by uptime
+hides everything: only sampling the delta over a fixed window says anything.
+
+So the fix was never in paperpod's code. lgpio's alert thread polls
+unconditionally; gpiozero has no setting that changes it. Reading edge events
+off `/dev/gpiochip0` blocks in the kernel instead, and the kernel does the
+debounce.
+
+What that bought, beyond 120x less idle CPU:
+
+- One thread instead of six. gpiozero used a thread per button to time holds;
+  the wait is now simply given a timeout matching the next hold deadline.
+- `bounce_time` stops being a Python concern — `debounce_period` is a line
+  setting the kernel honours.
+- No gpiozero dependency, so no `GPIOZERO_PIN_FACTORY` and no writable
+  working directory in the unit. Both of those were lgpio's requirements.
+- A better test seam. The edge source and the clock are injected, so presses,
+  holds and the suppression rule are tested as ordinary logic rather than by
+  stubbing `sys.modules['gpiozero']`.
+
+mopidy-epaper still uses gpiozero for the panel's RST and DC pins, so
+`python3-gpiozero`, `python3-lgpio` and the mopidy override's lgpio settings
+all stay. Only paperpod left.
+
+Not measured: actual power draw. 4-6% of one core is perhaps 10-20mW against a
+few hundred, so the battery gain may be small; the wakeup argument suggests
+more. A meter inline would settle it.
 
 ## Bring-up: five things that fail silently
 

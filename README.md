@@ -185,10 +185,10 @@ I2C-controlled volume this one lacks.
 ### Installing
 
 Clone it beside mopidy-epaper — `/home/murray/paperpod` is what the service
-unit expects — and let apt supply `gpiozero`:
+unit expects — and let apt supply the GPIO bindings:
 
 ```sh
-sudo apt install -y python3-gpiozero python3-pytest
+sudo apt install -y python3-libgpiod python3-pytest
 pytest tests/
 ```
 
@@ -280,6 +280,10 @@ Four of those lines are load-bearing in ways that are not obvious:
 - **`GPIOZERO_PIN_FACTORY=lgpio`** so that fallback cannot happen quietly
   again. If lgpio will not start you get an error naming it, instead of a
   confusing traceback about `/sys/class/gpio`.
+
+  Both of these are mopidy-epaper's needs, not paperpod's: the panel claims
+  its RST and DC pins with gpiozero. paperpod reads button edges through
+  libgpiod and needs neither.
 - **Dropping `/usr/share/mopidy/conf.d`** from the config path is deliberate.
   Running `mopidy` by hand never loaded it either, so this keeps the service
   identical to what you tested interactively.
@@ -348,7 +352,7 @@ direction makes the next button do something visible and unasked-for.
 
 ## Development
 
-Only `paperpod/app.py` imports gpiozero, so the bindings, the mode cache and
+Only `paperpod/app.py` touches the GPIO, so the bindings, the mode cache and
 the HTTP client can be exercised anywhere:
 
 ```sh
