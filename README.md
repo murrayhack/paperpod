@@ -139,11 +139,21 @@ That adds `dtoverlay=i2c-rtc,ds3231`, makes `i2c-dev` load at boot so
 reboot the kernel sets the clock from the RTC before NTP, so the Pi boots with
 the right time even with no network.
 
-**It needs a cell on the board's 2-pin JST connector to keep time while
-unpowered.** With nothing fitted the DS3231 works fine as long as the Pi has
-power, and forgets everything the moment it does not — which is the whole
-reason to have it. The real test is a full power-off, not a reboot: cut power,
-boot with wifi unavailable, and check `date`.
+**An RTC with no backup power is pointless.** The HAT+'s DS3231 works fine
+while the Pi has power and forgets everything the moment it does not, unless a
+cell is fitted to the board's 2-pin JST connector — and none is fitted from
+the factory. The real test is a full power-off, not a reboot: cut power, boot
+with wifi unavailable, and check `date`.
+
+**On this build it is PiSugar's RTC, not the HAT+'s.** A PiSugar 3 presents an
+MCU-emulated RTC at the same `0x68`, backed by the main battery, so it keeps
+time across a power cut with nothing extra to buy. The stock `ds3231` driver
+binds to it, so `--rtc` works unchanged.
+
+Two devices on one address do not fail cleanly, and `i2cdetect` cannot show
+you the clash — a scan finds one answer either way. So if you fit both, take
+one off the bus. Here the HAT+'s I2C pins are disconnected, which is why
+`0x57` and `0x68` are both PiSugar.
 
 ## Software
 

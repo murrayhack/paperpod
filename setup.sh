@@ -35,6 +35,9 @@ PAPERPOD_REPO=https://github.com/murrayhack/paperpod.git
 PROBLEMS=0
 WANT_RTC=0
 
+# Overridable so reboot_pending can be exercised without a Pi.
+RTC_SYSFS=${RTC_SYSFS:-/sys/class/rtc/rtc0}
+
 # ---------------------------------------------------------------- output ---
 
 BOLD=$(tput bold 2>/dev/null || true)
@@ -99,6 +102,12 @@ reboot_pending() {
         return 0
     fi
     if grep -qE '^dtparam=spi=on' "$CONFIG_TXT" && [ ! -e /dev/spidev0.0 ]; then
+        return 0
+    fi
+    # Any i2c-rtc overlay, not just ds3231: the question is whether config.txt
+    # asks for an RTC the running kernel has not been given, and the chip does
+    # not change the answer.
+    if grep -qE '^dtoverlay=i2c-rtc,' "$CONFIG_TXT" && [ ! -e "$RTC_SYSFS" ]; then
         return 0
     fi
     return 1
@@ -490,17 +499,22 @@ verify() {
     # hardware it does not have. Read through sysfs rather than `hwclock -r`,
     # which needs root -- and --verify is meant to run without sudo.
     if [ -n "$CONFIG_TXT" ] && grep -qE '^dtoverlay=i2c-rtc,ds3231' "$CONFIG_TXT" 2>/dev/null; then
-        if [ -r /sys/class/rtc/rtc0/time ]; then
+        if [ -r "$RTC_SYSFS/time" ]; then
             local rtc_utc rtc_local
-            rtc_utc="$(cat /sys/class/rtc/rtc0/date) $(cat /sys/class/rtc/rtc0/time)"
+            rtc_utc="$(cat "$RTC_SYSFS/date") $(cat "$RTC_SYSFS/time")"
             # sysfs always reports UTC, which reads as wrong by an hour or two
             # against a wall clock, so show the same instant in local time
             # too. Both dates are given because near midnight they differ.
             # Empty if date cannot parse it, and the line then shows UTC alone.
             rtc_local=$(date -d "$rtc_utc UTC" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || true)
             ok "RTC readable ($rtc_utc UTC${rtc_local:+ = $rtc_local})"
+        elif reboot_pending; then
+            # Not a failure: the overlay is in config.txt and overlays only
+            # apply at boot. Saying FAIL here sent someone hunting a bug that
+            # was a pending reboot.
+            warn "RTC overlay is configured but not loaded yet — reboot"
         else
-            bad "the ds3231 overlay is configured but /sys/class/rtc/rtc0 is not readable"
+            bad "the ds3231 overlay is configured but $RTC_SYSFS is not readable"
         fi
     fi
 

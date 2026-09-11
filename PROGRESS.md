@@ -281,20 +281,37 @@ Now that it runs on a measurable battery, today's CPU work has a number
 attached to it at last: `pisugar-server` reports charge over I2C, so drain
 rate converts straight to hours of runtime.
 
+## The RTC is PiSugar's (2026-09-10)
+
+Settled by taking the HAT+'s DS3231 off the bus — its I2C pins are
+disconnected — so `0x57` and `0x68` are both PiSugar and there is nothing to
+disambiguate. Its MCU-emulated RTC is register-compatible enough that the
+stock `ds3231` driver binds to it, so `./setup.sh --rtc` works unchanged and
+`/sys/class/rtc/rtc0` reads correctly.
+
+That is the better of the two. PiSugar's RTC is backed by the main cell, so it
+keeps time across a power cut; the HAT+'s never could, because nothing was
+ever fitted to its JST connector. No cell to buy, and no shared address to
+worry about.
+
+Fifteen minutes went into a non-problem on the way, and the script was at
+fault. The overlay was added at 23:34 to a machine that had booted at 23:12,
+and overlays only apply at boot — but `--verify` reported a hard **FAIL**
+saying the overlay was configured and the device unreadable, which reads as a
+broken RTC rather than an unbooted one. `reboot_pending()` already knew this
+pattern for the hifiberry overlay and for SPI; it simply did not know about
+the RTC. It does now, and the check says "reboot" instead of failing.
+
+Still worth doing once: a full power-off, PiSugar switched off, then
+`dmesg | grep -i rtc` on the next boot to watch the kernel set the clock from
+it before NTP. That confirms the battery backup rather than the wiring.
+
 ## Backlog
 
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
   rather than ten.
-- **Decide which RTC.** A PiSugar 3 is now fitted and has its own RTC,
-  backed by the main cell — so it keeps time across a power cut with
-  nothing extra to buy, which the HAT+'s DS3231 cannot without a cell on
-  its JST connector. The catch is that PiSugar is documented as occupying
-  0x57 **and 0x68**, and 0x68 is where the HAT+'s DS3231 already sits. Two
-  devices on one address do not fail cleanly and `i2cdetect` cannot show
-  it, since scanning finds one answer either way. `--rtc` stays off until
-  this is settled.
 - **A case.**
 - **Seek.** `seek_forward` / `seek_back` by 30s would fit naturally on a
   hold, and unlike volume there is no argument about where it belongs —
