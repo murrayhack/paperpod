@@ -326,12 +326,56 @@ exists. `fake-hwclock` is the confound, and the answer is to leave the machine
 off long enough that its stale value is obviously stale -- a two-minute power
 cut would have looked identical either way.
 
+## Power management (2026-09-11)
+
+`pisugar-server` 2.3.4 is installed, for the clean shutdown rather than the
+readout. Without it the device runs until the cell dies and stops mid-write,
+which is how SD cards get damaged — and the card that mysteriously lost its
+network was the one in use when the battery first went on. Never diagnosed, but
+it fits.
+
+Configured down to the minimum that provides it:
+
+    OPTS=--config config.json --model 'PiSugar 3' --uds /tmp/pisugar-server.sock
+
+No `--http`, `--ws` or `--tcp`, so there are no network listeners at all; the
+web UI was the only unauthenticated one on the device. The safe shutdown is
+internal to the daemon, so dropping the listeners does not weaken it.
+`auto_shutdown_level` is 5% with a 30s delay.
+
+Deliberately left off: `auto_rtc_sync`. The kernel's `rtc-ds1307` driver owns
+the chip through the overlay, and letting the daemon sync it too would give
+two writers to the same hardware with the kernel unaware — an occasional wrong
+clock and no error anywhere.
+
+Costs **0.79%** of a core, against their claimed "less than 2%". That makes it
+the largest single consumer on the device now (paperpod ~0.20%, Mopidy ~0.64%),
+which is a fair trade for not corrupting the card, and cheaper than
+reimplementing shutdown logic to avoid a daemon.
+
+Reading it, for whatever consumes this next:
+
+    echo "get battery" | timeout 1 nc -U /tmp/pisugar-server.sock
+    battery: 28.754677
+
+The value jitters by around 1.5 points between reads seconds apart, because
+the estimate comes from battery voltage, which sags under load and recovers.
+Anything displaying it should smooth or round, or it will flicker between
+numbers and look broken.
+
+One note on installing it: their script fetches the .deb packages over plain
+**http** and installs them as root with no signature check. The same files are
+served over https, so the URLs were rewritten before running it.
+
 ## Backlog
 
 - **Solder it onto a controller board.** Jumper wires for the panel, the
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
   rather than ten.
+- **Battery on the panel.** The socket makes it easy now, and a portable
+  player that cannot show its own charge is an odd thing. Smooth or round
+  the value — raw readings jitter by a point or two and would flicker.
 - **A case.**
 - **Seek.** `seek_forward` / `seek_back` by 30s would fit naturally on a
   hold, and unlike volume there is no argument about where it belongs —
