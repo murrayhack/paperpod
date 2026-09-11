@@ -302,9 +302,29 @@ broken RTC rather than an unbooted one. `reboot_pending()` already knew this
 pattern for the hifiberry overlay and for SPI; it simply did not know about
 the RTC. It does now, and the check says "reboot" instead of failing.
 
-Still worth doing once: a full power-off, PiSugar switched off, then
-`dmesg | grep -i rtc` on the next boot to watch the kernel set the clock from
-it before NTP. That confirms the battery backup rather than the wiring.
+Confirmed across a nine-hour power-off, on battery, with no cable attached
+overnight. The evidence is worth spelling out because a single-line boot list
+is not obviously proof:
+
+    $ journalctl --list-boots
+      0 ...  FIRST ENTRY Thu 2026-09-10 23:41:51 CEST
+             LAST ENTRY  Fri 2026-09-11 08:48:52 CEST
+
+    $ dmesg | grep -i rtc
+    [   14.604] rtc-ds1307 1-0068: registered as rtc0
+    [   14.605] rtc-ds1307 1-0068: setting system clock to 2026-09-11T06:33:21 UTC
+
+One boot cannot begin at 23:41 and be at 08:33 fifteen seconds later. What
+happened is that `fake-hwclock` restored the previous shutdown time, journald
+stamped its first entries with it, and the RTC then corrected the clock
+forward by nine hours. The chip could only know that by keeping time with the
+Pi powered down, on PiSugar's cell.
+
+NTP is not a confound here as long as the check is `dmesg` rather than `date`:
+the kernel sets the clock from the RTC in early boot, long before networking
+exists. `fake-hwclock` is the confound, and the answer is to leave the machine
+off long enough that its stale value is obviously stale -- a two-minute power
+cut would have looked identical either way.
 
 ## Backlog
 
