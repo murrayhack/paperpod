@@ -353,15 +353,20 @@ the largest single consumer on the device now (paperpod ~0.20%, Mopidy ~0.64%),
 which is a fair trade for not corrupting the card, and cheaper than
 reimplementing shutdown logic to avoid a daemon.
 
-Reading it, for whatever consumes this next:
+Reading it, which is what mopidy-epaper now does for the panel indicator:
 
     echo "get battery" | timeout 1 nc -U /tmp/pisugar-server.sock
     battery: 28.754677
 
 The value jitters by around 1.5 points between reads seconds apart, because
 the estimate comes from battery voltage, which sags under load and recovers.
-Anything displaying it should smooth or round, or it will flicker between
-numbers and look broken.
+mopidy-epaper rounds to the nearest 10% for that reason — on e-paper every
+change costs a refresh, so a number wandering between 29 and 31 would repaint
+the panel for nothing.
+
+The panel shows charge, a bolt when the charger is connected, and can refresh
+faster on mains. See mopidy-epaper's `battery_socket` and
+`update_interval_charging`.
 
 One note on installing it: their script fetches the .deb packages over plain
 **http** and installs them as root with no signature check. The same files are
@@ -373,9 +378,6 @@ served over https, so the URLs were rewritten before running it.
   DAC and five buttons is past what a breadboard should be asked to do.
   The five buttons share the ground at pin 30, so they need six wires
   rather than ten.
-- **Battery on the panel.** The socket makes it easy now, and a portable
-  player that cannot show its own charge is an odd thing. Smooth or round
-  the value — raw readings jitter by a point or two and would flicker.
 - **A case.**
 - **Seek.** `seek_forward` / `seek_back` by 30s would fit naturally on a
   hold, and unlike volume there is no argument about where it belongs —
