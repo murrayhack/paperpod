@@ -339,6 +339,28 @@ cut would have looked identical either way.
 
 ## Known limitations
 
+- **Volume changes are heard about two seconds late.** The panel updates
+  instantly, so the press, the JSON-RPC call and Mopidy's event push are all
+  fast — the delay is entirely in the audio path, downstream of the
+  softwaremixer applying gain. Audio already buffered plays out at the old
+  volume first.
+
+  `[audio] buffer_time = 300` in `mopidy.conf` does **not** fix it. The
+  setting applied (confirmed in `mopidy config` output) and changed nothing,
+  which fits: Mopidy's `buffer_time` largely governs buffering of streaming
+  *sources*, not the playout path for a local file.
+
+  Untried: `alsasink`'s own buffer, set on the output string as
+  `alsasink device=... buffer-time=100000 latency-time=20000` — microseconds,
+  not milliseconds. If the lag scales with that, it is the sink's buffer.
+  If it does not, the buffering is upstream and no sink setting will reach it.
+
+  Worth knowing before tuning it down: a smaller buffer means more frequent
+  wakeups to refill, which works directly against the idle-power work. The
+  goal is the largest buffer whose lag is tolerable, not the smallest that
+  plays without underruns — and underruns sound far worse than a slow volume
+  knob.
+
 - **`/epaper/status` can 504 during a full refresh.** Holding 26 for
   `toggle_lock` repaints the panel, which holds the frontend actor for
   seconds; a poll landing in that window gets a 504 from `http.py` and
