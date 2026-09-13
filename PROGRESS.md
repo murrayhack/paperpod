@@ -397,6 +397,14 @@ but it is four times the CPU, and +4.8 is about what the lgpio alert thread was
 costing before it was found. `equalizer-nbands num-bands=N` picks any point on
 that line if three is too coarse.
 
+Output is attenuated ahead of the sink, because with no hardware volume the
+useful range sat in the bottom quarter of Mopidy's slider — uncomfortable, and
+wasteful of resolution, since `volume_step` then leaves about five usable
+positions. `volume volume=0.25` ahead of the sink maps the whole slider onto a
+range worth using, at the cost of one gain multiply per sample and some bit
+depth. The clean fix is a lower-gain amplifier; this is its software
+approximation.
+
 Three bands is the sensible default here: ~1.1% is noise beside the 7.9% the
 decode already costs, and nothing at all at idle, where the device spends most
 of its life.

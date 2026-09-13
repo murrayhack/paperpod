@@ -192,6 +192,37 @@ keeps the panel's volume readout meaningful. Guides that tell you to set
 `mixer = alsamixer` are written for chips like the PCM5122, which has an
 I2C-controlled volume this one lacks.
 
+### If everything is too loud
+
+With no hardware volume, Mopidy's slider is the only attenuation, and into a
+reasonably sensitive amplifier the useful range can end up squeezed into the
+bottom quarter. That is not just uncomfortable — it throws away resolution,
+leaving perhaps five useful positions once `volume_step` is taken into
+account.
+
+Attenuate ahead of the sink, so the whole slider maps onto a range you would
+actually use:
+
+```ini
+[audio]
+output = volume volume=0.25 ! alsasink device=sysdefault:CARD=sndrpihifiberry
+```
+
+Mopidy's mixer still applies on top, so 100% becomes roughly what 25% was, and
+every step in between becomes useful. It costs one gain multiply per sample,
+which is nothing.
+
+Pick the number by ear rather than by arithmetic: set Mopidy to 100%, try
+`0.25`, and halve it until the loudest position is one you would choose.
+Whether `0.25` lands near a quarter of the old loudness depends on whether the
+mixer applies a linear or a perceptual curve, which is not worth deriving when
+one listen settles it.
+
+The honest cost is bit depth: digital attenuation throws away resolution,
+roughly two bits at −12 dB and six at −36 dB. Audible as a raised noise floor
+in quiet passages, if at all. The clean fix is hardware — a lower-gain
+amplifier or a resistive pad — and this is the software approximation of it.
+
 ### Equalizer (optional)
 
 Nothing here ships an EQ. The PCM5100A has no hardware one and no I2C control,
@@ -241,6 +272,13 @@ pcm.equal {
 ```
 
 with `output = alsasink device=equal`, adjusted live by `amixer -D equal`.
+Combined with the attenuation above, the whole chain reads:
+
+```ini
+output = volume volume=0.25 ! alsasink device=equal
+```
+
+— turn it down, equalise it, then out to the DAC.
 Mopidy neither knows nor cares, which is the appeal: no coupling to its
 internals, and presets are a handful of `amixer` calls.
 
