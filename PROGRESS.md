@@ -372,6 +372,43 @@ One note on installing it: their script fetches the .deb packages over plain
 **http** and installs them as root with no signature check. The same files are
 served over https, so the URLs were rewritten before running it.
 
+## Equalizer (2026-09-13)
+
+The PCM5100A has no hardware EQ and no I2C control, so this is software on
+every sample. Mopidy's `output` is a GStreamer bin description, so a fixed
+curve costs no code at all:
+
+    [audio]
+    output = audioconvert ! equalizer-3bands band0=4.0 band2=3.0
+             ! audioconvert ! alsasink device=sysdefault:CARD=sndrpihifiberry
+
+Measured on the hardware, same track and same power state each time, because
+the cost is carried for as long as the music plays:
+
+| | CPU while playing | cost |
+| --- | --- | --- |
+| no EQ | 7.88% | — |
+| `equalizer-3bands` | 9.02% | **+1.1** |
+| `equalizer-10bands` | 12.69% | **+4.8** |
+
+The cost is per band, at roughly half a point each — every band is another IIR
+section running on every sample. Ten bands is not four times better than three
+but it is four times the CPU, and +4.8 is about what the lgpio alert thread was
+costing before it was found. `equalizer-nbands num-bands=N` picks any point on
+that line if three is too coarse.
+
+Three bands is the sensible default here: ~1.1% is noise beside the 7.9% the
+decode already costs, and nothing at all at idle, where the device spends most
+of its life.
+
+Making it adjustable from the panel was looked at and not attempted. Mopidy
+exposes no API to the running pipeline — extensions get `core`, not `audio` —
+so reaching it means going through Pykka's actor registry into private
+attributes, which would break silently on a Mopidy upgrade. The path that does
+not touch internals is an ALSA-level EQ (`libasound2-plugin-equal`, packaged in
+Trixie) driven by `amixer`, with presets in the panel's options menu beside
+shuffle and repeat. Not built.
+
 ## Backlog
 
 - **Solder it onto a controller board.** Jumper wires for the panel, the
