@@ -401,6 +401,13 @@ Three bands is the sensible default here: ~1.1% is noise beside the 7.9% the
 decode already costs, and nothing at all at idle, where the device spends most
 of its life.
 
+Deliberately left as a build-time choice rather than a runtime toggle: whoever
+builds one picks battery life or adjustability, in `mopidy.conf`. A bypass was
+considered and rejected — switching the ALSA device needs a Mopidy restart,
+which stops playback, and flattening the bands saves nothing because the
+filter still runs. The saving would be perhaps 10-15 mW against several
+hundred, which is not worth a mechanism.
+
 Making it adjustable from the panel was looked at and not attempted. Mopidy
 exposes no API to the running pipeline — extensions get `core`, not `audio` —
 so reaching it means going through Pykka's actor registry into private

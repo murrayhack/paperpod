@@ -192,6 +192,73 @@ keeps the panel's volume readout meaningful. Guides that tell you to set
 `mixer = alsamixer` are written for chips like the PCM5122, which has an
 I2C-controlled volume this one lacks.
 
+### Equalizer (optional)
+
+Nothing here ships an EQ. The PCM5100A has no hardware one and no I2C control,
+so it is software on every sample — which means the choice is yours to make at
+build time, between battery life and adjustability.
+
+**A fixed curve costs no code.** Mopidy's `output` is a GStreamer bin
+description, so inserting a filter is a config change:
+
+```ini
+[audio]
+output = audioconvert ! equalizer-3bands band0=4.0 band2=3.0
+         ! audioconvert ! alsasink device=sysdefault:CARD=sndrpihifiberry
+```
+
+Measured on a Pi Zero 2 W, same track and power state each time:
+
+| | CPU while playing | cost |
+| --- | --- | --- |
+| no EQ | 7.88% | — |
+| `equalizer-3bands` | 9.02% | +1.1 |
+| `equalizer-10bands` | 12.69% | +4.8 |
+
+Roughly half a point per band, because each one is another IIR section running
+on every sample. `equalizer-nbands num-bands=N` picks any point on that line.
+None of it costs anything at idle, where the device spends most of its life.
+
+**Adjustable costs more.** For bands you can change while it plays, put the EQ
+below Mopidy in ALSA with `libasound2-plugin-equal`, in `/etc/asound.conf`:
+
+```
+ctl.equal {
+    type equal;
+    controls "/home/murray/.alsaequal.bin";
+}
+
+pcm.plugequal {
+    type equal;
+    slave.pcm "plughw:CARD=sndrpihifiberry,DEV=0";
+    controls "/home/murray/.alsaequal.bin";
+}
+
+pcm.equal {
+    type plug;
+    slave.pcm plugequal;
+}
+```
+
+with `output = alsasink device=equal`, adjusted live by `amixer -D equal`.
+Mopidy neither knows nor cares, which is the appeal: no coupling to its
+internals, and presets are a handful of `amixer` calls.
+
+The catch is that alsaequal is **ten bands only** — so adjustability costs
+about the +4.8 above, not the +1.1. It is also unmaintained, dating from
+around 2008, and fussy about sample rates and about its controls file being
+writable by the user Mopidy runs as. [CamillaDSP][camilla] is the modern
+equivalent if this becomes something you rely on: actively maintained, with a
+websocket API that can swap configurations live, including to a flat one.
+
+[camilla]: https://github.com/HEnquist/camilladsp
+
+There is deliberately no runtime bypass. Switching the ALSA device means
+restarting Mopidy, which stops playback, and flattening the bands saves
+nothing because the filter still runs. The saving is small enough that it is
+not worth engineering around: 4.8% of one core out of four is perhaps 10-15 mW
+against several hundred while playing.
+
 ### Installing
 
 Clone it beside mopidy-epaper — `/home/murray/paperpod` is what the service
