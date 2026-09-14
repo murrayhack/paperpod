@@ -1,0 +1,14 @@
+[Unit]
+Description=PiSugar battery logger
+# Nothing to sample before the power manager is up.
+After=pisugar-server.service mopidy.service
+
+[Service]
+Type=simple
+User=murray
+ExecStart=/home/murray/paperpod/tools/batterylog.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
