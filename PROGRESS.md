@@ -424,6 +424,53 @@ not touch internals is an ALSA-level EQ (`libasound2-plugin-equal`, packaged in
 Trixie) driven by `amixer`, with presets in the panel's options menu beside
 shuffle and repeat. Not built.
 
+## Battery runtime, measured (2026-09-14)
+
+**2.85 hours idle**, nothing playing, panel asleep. 81% to the 5% shutdown in
+171 minutes, logged by `tools/batterylog.sh` once a minute.
+
+Two things had to be established first. PiSugar 3 **does not report current**:
+`get battery_i` answers a hard zero even with `battery_power_plugged: false`,
+so there is no power meter and runtime can only be measured by watching the
+charge fall. And its firmware caps charging at about **81%** — nothing is set
+in `battery_charging_range`, so that is hardware protection for cell
+longevity, not a setting. A "full" cell here is 81%, and the usable window is
+81% to 5%.
+
+### The percentage is not linear in time
+
+This is the finding that matters, and it undermines the panel's battery
+indicator:
+
+| reported | actually remaining | if it were linear |
+| --- | --- | --- |
+| 81% | 171 min | — |
+| 70% | 71 min | 148 min |
+| 50% | 24 min | 106 min |
+| 20% | **6 min** | 42 min |
+
+The first 18 points of charge took 134 minutes. The last 56 points took 37.
+PiSugar derives its percentage from voltage, and a Li-ion discharge curve is
+flat through the middle and then falls off a cliff; their mapping does not
+compensate. Voltage over the same run fell 3.83 V to 3.33 V, smoothly and
+monotonically — it is the better signal of the two.
+
+So the indicator reads optimistically exactly where it matters. At a reported
+half full, six minutes of that is not what is left; roughly a seventh of the
+runtime is.
+
+It also settles the question of rescaling 81% to read as 100%: it would not
+help. The problem is the shape, not the range, and a linearly rescaled
+non-linear estimate is still non-linear.
+
+### Caveats
+
+One run, one cell, at idle and at room temperature. Playing draws more current
+and sags the voltage further, so anything calibrated from this curve will
+over-read when the device is busy. The first ten minutes after unplugging are
+surface charge settling rather than discharge — the estimate fell 3.4 points
+in 66 seconds — and are excluded from the figures above.
+
 ## Backlog
 
 - **Solder it onto a controller board.** Jumper wires for the panel, the
